@@ -260,7 +260,7 @@
 
     .tooltip {
       position: absolute;
-      top: 64px;
+      top: 76px;
       left: 12px;
       z-index: 6;
       display: none;
@@ -415,7 +415,6 @@
   <main class="app">
     <section class="controls">
       <div class="toolbar">
-        <button id="energy-only" class="primary" type="button">Nur Energy</button>
         <button id="default-selection" type="button">Standard-Auswahl</button>
         <button id="select-all" type="button">Alle auswählen</button>
         <button id="clear-all" type="button">Alle abwählen</button>
@@ -777,6 +776,18 @@
       return dates.length ? dates[dates.length - 1] : null;
     }
 
+    function getEarliestDate(selectedSeries) {
+      const dates = selectedSeries
+        .map((series) => {
+          const points = getSeriesPoints(series);
+          return points.length ? points[0].time : null;
+        })
+        .filter(Boolean)
+        .sort();
+
+      return dates.length ? dates[0] : null;
+    }
+
     function getDisplayStartDate(latestDate) {
       if (!latestDate || displayRangeKey === "all") return null;
 
@@ -1123,6 +1134,7 @@
         return;
       }
 
+      const earliestDate = getEarliestDate(selected);
       const latestDate = getLatestDate(selected);
       const displayStartDate = getDisplayStartDate(latestDate);
       const basisDate = getBasisTargetDate(
@@ -1208,6 +1220,7 @@
         `${seriesEntries.length} Reihen · ${getViewModeLabel(viewMode)} · ` +
         `Anzeige: ${displayedRange} · ` +
         `Indexbasis: ${basisText} · ` +
+        `Datei-Historie: ${earliestDate || "–"} bis ${latestDate || "–"} · ` +
         `tägliche Schlusskurse · Datenstand: ${formatTimestamp(dataset.generated_at)}.`
       );
     }
@@ -1310,11 +1323,6 @@
         updatePeriodButtons();
         requestRender();
       });
-    });
-
-    document.getElementById("energy-only").addEventListener("click", () => {
-      setCheckedTickers(COMMODITY_GROUPS.Energy.map((item) => item.ticker));
-      requestRender();
     });
 
     document.getElementById("default-selection").addEventListener("click", () => {

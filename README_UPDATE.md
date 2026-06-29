@@ -1,32 +1,21 @@
-# Final control update
+# Bereinigtes Update
 
-Replace only `index.html`.
+Ersetze ausschließlich `index.html`.
 
-## What this update changes
+Änderungen:
+- Der Button **Nur Energy** wurde entfernt.
+- Die Zeitraum-Buttons arbeiten weiterhin als echte Datenfilter:
+  `1J | 3J | 5J | 10J | 20J | Alles`.
+- Im Status steht zusätzlich:
+  `Datei-Historie: [erstes Datum] bis [letztes Datum]`.
 
-### 1. Display range
-`1J | 3J | 5J | 10J | 20J | Alles`
+## Wichtige Prüfung nach dem Hochladen
 
-The selected range filters the data **before** they are passed to Lightweight
-Charts™. `fitContent()` therefore must display exactly the selected time
-window. The chart no longer relies on a time-scale movement that can be
-overwritten in an embedded page.
+1. Wähle **Alles**.
+2. Lies den neuen Status.
 
-### 2. Index base
-The display range is independent from the index base. In `Index 100` and
-`Log-Performance`, use **Indexbasis** to choose:
-
-- start of displayed range
-- 1 / 3 / 5 / 10 / 20 years before last available price
-- first common selected observation
-- your own calendar date
-
-### 3. Log-Performance
-It is now:
-`100 × ln(price / base price)`
-
-It is **not** a logarithmic price axis. The base is 0.
-
-### 4. Legend
-Every legend item shows the newest original price under its name, in the same
-color as the corresponding time series.
+- Steht dort beispielsweise `Datei-Historie: 1983-... bis 2026-...`,
+  aber der Chart startet trotzdem erst 2024, dann ist es ein Chart-/Browserproblem.
+- Steht dort `Datei-Historie: 2024-... bis 2026-...`, dann enthält
+  `data/commodities.json` selbst keine ältere Historie. Dann müssen wir
+  den GitHub-Action-Datenlauf reparieren, nicht die HTML-Datei.
