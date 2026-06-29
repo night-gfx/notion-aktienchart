@@ -1,16 +1,17 @@
-# Update: Zeitraum-Buttons
+# Fix: Zeitraum-Buttons
 
 Replace only `index.html`.
 
-New buttons:
-- 1J
-- 3J
-- 5J
-- 10J
-- 20J
-- Alles
+The earlier version used `setVisibleRange()` to shift the time axis. In some
+embeds this did not visibly change the chart.
 
-The entire daily history stays loaded. The buttons use Lightweight Charts™
-to set the visible range, so scrolling and zooming in the chart still work.
-In index mode each selected series is rebased to 100 at the start of the
-selected time window.
+This version filters the daily observations before plotting:
+- 1J = only data from the last 1 year
+- 3J = only data from the last 3 years
+- 5J = only data from the last 5 years
+- 10J = only data from the last 10 years
+- 20J = only data from the last 20 years
+- Alles = complete available history
+
+For `Indexiert 100`, every selected series starts at 100 at the beginning of
+the currently selected period.

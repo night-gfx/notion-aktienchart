@@ -387,7 +387,7 @@
 
   <script>
     /*
-      The page loads full daily history and uses period buttons to set the initial visible range.
+      The page loads daily history and filters the rendered data to the selected period.
       The GitHub workflow writes this JSON from Yahoo Finance. No browser
       request is made to Yahoo Finance, avoiding CORS errors.
     */
@@ -648,30 +648,30 @@
     }
 
     function transformData(series, mode, visibleFrom) {
-      const points = (series.data || [])
+      /*
+        The selected range is filtered before data reach the chart.
+        This is more reliable than only moving the visible time scale,
+        especially inside a Notion iframe.
+      */
+      let points = (series.data || [])
         .map(([time, value]) => ({
           time,
           value: Number(value)
         }))
         .filter((point) => Number.isFinite(point.value) && point.value > 0);
 
+      if (visibleFrom) {
+        points = points.filter((point) => point.time >= visibleFrom);
+      }
+
       if (!points.length) return [];
 
       if (mode === "indexed") {
-        /*
-          In index mode, 100 is the first available observation of the chosen
-          period. Data before that date remain available for the chart but are
-          outside the initially visible window.
-        */
-        const basePoint = visibleFrom
-          ? points.find((point) => point.time >= visibleFrom)
-          : points[0];
-
-        if (!basePoint) return [];
+        const base = points[0].value;
 
         return points.map((point) => ({
           time: point.time,
-          value: (point.value / basePoint.value) * 100
+          value: (point.value / base) * 100
         }));
       }
 
@@ -891,19 +891,11 @@
         return;
       }
 
-      chart.timeScale().fitContent();
-
       /*
-        The full daily history remains loaded. These buttons only set the
-        initially visible window — just like a TradingView-style range preset.
-        The user can still zoom and drag afterwards.
+        fitContent now fits exactly the data selected by the period button.
+        This guarantees that 1J / 3J / 5J visibly change the chart.
       */
-      if (visibleFrom && latestTime) {
-        chart.timeScale().setVisibleRange({
-          from: visibleFrom,
-          to: latestTime
-        });
-      }
+      chart.timeScale().fitContent();
 
       setStatus(
         `${seriesEntries.length} Reihen · ${getScaleText(mode)} · ` +
