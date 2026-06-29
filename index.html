@@ -1049,9 +1049,16 @@
           borderColor: "#cbd5e1",
           timeVisible: false,
           secondsVisible: false,
+        
           rightOffset: 2,
-          barSpacing: 7,
-          minBarSpacing: 2
+        
+          /*
+            Wichtig für tägliche Daten über viele Jahre:
+            Der Abstand darf sehr klein werden, damit 10–40 Jahre
+            auf einmal dargestellt werden können.
+          */
+          barSpacing: 1.2,
+          minBarSpacing: 0.05
         },
         crosshair: {
           vertLine: {
