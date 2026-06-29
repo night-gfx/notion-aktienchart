@@ -1,42 +1,38 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rohstoffvergleich</title>
 
-  <title>Rohstoff-CFD Vergleich</title>
+  <!-- Pinned Lightweight Charts™ version so later library changes do not break the page. -->
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
     :root {
-      --background: #ffffff;
-      --panel: #f7f7f7;
-      --border: #d9d9d9;
-      --text: #1d1d1f;
-      --muted: #666666;
-      --button: #ffffff;
-      --button-hover: #ececec;
+      --bg: #ffffff;
+      --panel: #f8fafc;
+      --border: #d8dee8;
+      --text: #172033;
+      --muted: #64748b;
+      --primary: #1d4ed8;
+      --primary-hover: #1e40af;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html,
-    body {
+    html, body {
       width: 100%;
       height: 100%;
       margin: 0;
-      padding: 0;
-      background: var(--background);
+      background: var(--bg);
       color: var(--text);
       font-family: Arial, Helvetica, sans-serif;
     }
 
-    body {
-      overflow: hidden;
-    }
+    body { overflow: hidden; }
 
-    .page {
+    .app {
       display: flex;
       flex-direction: column;
       width: 100%;
@@ -45,14 +41,14 @@
 
     .controls {
       flex: 0 0 auto;
-      max-height: 360px;
+      max-height: 385px;
       overflow-y: auto;
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
     }
 
-    .top-row {
+    .toolbar {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -60,73 +56,53 @@
       margin-bottom: 10px;
     }
 
-    button,
-    select,
-    input[type="text"] {
+    button, select {
       min-height: 31px;
       padding: 5px 9px;
-      border: 1px solid #c9c9c9;
+      border: 1px solid #c7d0dd;
       border-radius: 6px;
-      background: var(--button);
+      background: #ffffff;
       color: var(--text);
-      font-family: inherit;
+      font: inherit;
       font-size: 13px;
     }
 
-    button {
-      cursor: pointer;
-    }
+    button { cursor: pointer; }
+    button:hover { background: #eef2f7; }
 
-    button:hover {
-      background: var(--button-hover);
-    }
-
-    .primary-button {
-      border-color: #2f6fed;
-      background: #2f6fed;
+    .primary {
+      border-color: var(--primary);
+      background: var(--primary);
       color: #ffffff;
     }
 
-    .primary-button:hover {
-      background: #2156be;
-    }
+    .primary:hover { background: var(--primary-hover); }
 
     .control-label {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      min-height: 30px;
+      min-height: 31px;
       font-size: 13px;
-      cursor: pointer;
       white-space: nowrap;
+      cursor: pointer;
     }
 
-    .scale-box {
+    .mode-box {
       display: inline-flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 8px;
       padding: 5px 8px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 7px;
       background: #ffffff;
     }
 
-    .scale-title {
+    .mode-title {
       color: var(--muted);
       font-size: 12px;
       font-weight: 700;
-    }
-
-    .custom-symbol-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 7px;
-      margin-bottom: 10px;
-    }
-
-    #custom-symbol {
-      width: min(290px, 100%);
     }
 
     .groups {
@@ -136,10 +112,10 @@
     }
 
     details {
+      padding: 8px 9px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #ffffff;
-      padding: 8px 9px;
     }
 
     summary {
@@ -153,7 +129,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      margin: 8px 0 7px 0;
+      margin: 8px 0;
     }
 
     .group-actions button {
@@ -175,85 +151,121 @@
       padding: 4px 6px;
       border-left: 5px solid var(--series-color);
       border-radius: 4px;
-      background: #fbfbfb;
-      font-size: 12px;
+      background: #fbfcfe;
       cursor: pointer;
+      font-size: 12px;
     }
 
-    .commodity-item:hover {
-      background: #f1f1f1;
-    }
+    .commodity-item:hover { background: #f0f4f8; }
 
-    .symbol-code {
+    .ticker {
       color: var(--muted);
       font-size: 10px;
-    }
-
-    .custom-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    .custom-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 7px;
-      border-left: 5px solid var(--series-color);
-      border-radius: 6px;
-      background: #ffffff;
-      border-top: 1px solid var(--border);
-      border-right: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
-    }
-
-    .custom-item button {
-      min-height: auto;
-      padding: 0 3px;
-      border: none;
-      background: transparent;
-      color: #777777;
-      font-size: 16px;
-      line-height: 1;
-    }
-
-    .custom-item button:hover {
-      color: #000000;
-      background: transparent;
     }
 
     .status {
       margin-top: 10px;
       color: var(--muted);
       font-size: 12px;
-      line-height: 1.35;
+      line-height: 1.4;
     }
 
-    .chart-host {
+    .chart-shell {
+      position: relative;
       flex: 1 1 auto;
       min-height: 0;
-      width: 100%;
       background: #ffffff;
     }
 
-    .tradingview-widget-container,
-    .tradingview-widget-container__widget {
+    #chart {
       width: 100%;
       height: 100%;
     }
 
-    .tradingview-widget-copyright {
-      height: 28px;
-      padding: 5px 8px;
-      color: #777777;
-      font-size: 10px;
-      text-align: right;
+    .legend {
+      position: absolute;
+      top: 9px;
+      left: 12px;
+      right: 60px;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px 10px;
+      pointer-events: none;
+      font-size: 11px;
     }
 
-    .tradingview-widget-copyright a {
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.88);
+      color: #334155;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+
+    .tooltip {
+      position: absolute;
+      top: 42px;
+      left: 12px;
+      z-index: 6;
+      display: none;
+      max-width: min(330px, calc(100% - 24px));
+      padding: 8px 9px;
+      border: 1px solid rgba(148, 163, 184, 0.75);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+      color: #1e293b;
+      font-size: 11px;
+      line-height: 1.4;
+      pointer-events: none;
+    }
+
+    .tooltip-date {
+      margin-bottom: 4px;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    .tooltip-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .tooltip-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .tooltip-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+
+    .attribution {
+      position: absolute;
+      right: 8px;
+      bottom: 5px;
+      z-index: 5;
+      color: #64748b;
+      font-size: 10px;
+    }
+
+    .attribution a {
       color: #2962ff;
       text-decoration: none;
     }
@@ -264,914 +276,632 @@
       justify-content: center;
       width: 100%;
       height: 100%;
-      padding: 20px;
-      color: #666666;
-      font-size: 15px;
+      padding: 24px;
+      color: var(--muted);
       text-align: center;
+      font-size: 15px;
     }
 
     @media (max-width: 700px) {
-      .controls {
-        max-height: 430px;
-      }
-
-      .groups {
-        grid-template-columns: 1fr;
-      }
+      .controls { max-height: 475px; }
+      .groups { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 
 <body>
-  <main class="page">
-
+  <main class="app">
     <section class="controls">
-
-      <div class="top-row">
-        <button id="energy-only" type="button" class="primary-button">
-          Nur Energy
-        </button>
-
-        <button id="standard-selection" type="button">
-          Standard-Auswahl
-        </button>
-
-        <button id="select-all" type="button">
-          Alle auswählen
-        </button>
-
-        <button id="clear-all" type="button">
-          Alle abwählen
-        </button>
+      <div class="toolbar">
+        <button id="energy-only" class="primary" type="button">Nur Energy</button>
+        <button id="default-selection" type="button">Standard-Auswahl</button>
+        <button id="select-all" type="button">Alle auswählen</button>
+        <button id="clear-all" type="button">Alle abwählen</button>
 
         <label class="control-label">
           Zeitraum:
           <select id="range-select">
-            <option value="12M">1 Jahr</option>
-            <option value="36M">3 Jahre</option>
-            <option value="60M">5 Jahre</option>
-            <option value="120M">10 Jahre</option>
-            <option value="ALL" selected>Maximal verfügbar</option>
+            <option value="1y">1 Jahr</option>
+            <option value="3y">3 Jahre</option>
+            <option value="5y">5 Jahre</option>
+            <option value="10y">10 Jahre</option>
+            <option value="max" selected>Maximal verfügbar</option>
           </select>
         </label>
 
-        <div class="scale-box">
-          <span class="scale-title">Skala:</span>
+        <div class="mode-box" aria-label="Skalierungsmodus">
+          <span class="mode-title">Skala:</span>
 
           <label class="control-label">
-            <input
-              type="radio"
-              name="scale-mode"
-              value="price"
-            />
+            <input type="radio" name="scale-mode" value="price">
             Preis
           </label>
 
           <label class="control-label">
-            <input
-              type="radio"
-              name="scale-mode"
-              value="indexed"
-              checked
-            />
+            <input type="radio" name="scale-mode" value="indexed" checked>
             Indexiert 100
           </label>
 
           <label class="control-label">
-            <input
-              type="radio"
-              name="scale-mode"
-              value="log"
-            />
+            <input type="radio" name="scale-mode" value="log">
             Logarithmisch
           </label>
         </div>
       </div>
 
-      <div class="custom-symbol-row">
-        <input
-          id="custom-symbol"
-          type="text"
-          placeholder="Eigenes TradingView-CFD-Symbol, z. B. CAPITALCOM:NICKEL"
-          autocomplete="off"
-        />
-
-        <button id="add-custom-symbol" type="button">
-          Eigenes Symbol hinzufügen
-        </button>
-      </div>
-
       <div id="commodity-groups" class="groups"></div>
-
-      <div id="custom-symbol-list" class="custom-list"></div>
-
-      <div id="status" class="status">
-        Rohstoff-CFDs werden geladen.
-      </div>
+      <div id="status" class="status">Datenquelle wird geladen.</div>
     </section>
 
-    <section id="chart-host" class="chart-host"></section>
+    <section class="chart-shell">
+      <div id="chart"></div>
+      <div id="legend" class="legend"></div>
+      <div id="tooltip" class="tooltip"></div>
 
+      <div class="attribution">
+        Charts by
+        <a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">
+          TradingView
+        </a>
+        · Lightweight Charts™
+      </div>
+    </section>
   </main>
 
   <script>
     /*
-      TradingView-CFD-/Cash-Symbole.
-
-      Die Daten sind keine Futures-Kontrakte wie COMEX:GC1!,
-      sondern Spot-/Cash- bzw. CFD-Proxys verschiedener Anbieter.
+      The page itself only reads data/commodities.json from GitHub Pages.
+      The GitHub workflow writes this JSON from Yahoo Finance. No browser
+      request is made to Yahoo Finance, avoiding CORS errors.
     */
+
     const COMMODITY_GROUPS = {
       "Energy": [
-        {
-          name: "WTI Crude",
-          symbol: "TVC:USOIL"
-        },
-        {
-          name: "Brent Crude",
-          symbol: "TVC:UKOIL"
-        },
-        {
-          name: "Natural Gas",
-          symbol: "OANDA:NATGASUSD"
-        },
-        {
-          name: "Gasoline",
-          symbol: "CAPITALCOM:GASOLINE"
-        },
-        {
-          name: "Heating Oil",
-          symbol: "CAPITALCOM:HEATINGOIL"
-        },
-        {
-          name: "London Gasoil",
-          symbol: "CAPITALCOM:GASOIL"
-        }
+        { ticker: "CL=F", name: "WTI Crude" },
+        { ticker: "BZ=F", name: "Brent Crude" },
+        { ticker: "NG=F", name: "Natural Gas" },
+        { ticker: "RB=F", name: "RBOB Gasoline" },
+        { ticker: "HO=F", name: "Heating Oil" }
       ],
-
       "Metals": [
-        {
-          name: "Gold",
-          symbol: "TVC:GOLD"
-        },
-        {
-          name: "Silver",
-          symbol: "TVC:SILVER"
-        },
-        {
-          name: "Copper",
-          symbol: "CAPITALCOM:XCUUSD"
-        },
-        {
-          name: "Platinum",
-          symbol: "TVC:PLATINUM"
-        },
-        {
-          name: "Palladium",
-          symbol: "TVC:PALLADIUM"
-        },
-        {
-          name: "Aluminium",
-          symbol: "CAPITALCOM:ALUMINUM"
-        },
-        {
-          name: "Nickel",
-          symbol: "CAPITALCOM:NICKEL"
-        },
-        {
-          name: "Zinc",
-          symbol: "CAPITALCOM:MZN3"
-        },
-        {
-          name: "Lead",
-          symbol: "CAPITALCOM:LEAD"
-        }
+        { ticker: "GC=F", name: "Gold" },
+        { ticker: "SI=F", name: "Silver" },
+        { ticker: "HG=F", name: "Copper" },
+        { ticker: "PL=F", name: "Platinum" },
+        { ticker: "PA=F", name: "Palladium" },
+        { ticker: "ALI=F", name: "Aluminum" }
       ],
-
       "Grains / Oilseeds": [
-        {
-          name: "Corn",
-          symbol: "OANDA:CORNUSD"
-        },
-        {
-          name: "Wheat",
-          symbol: "OANDA:WHEATUSD"
-        },
-        {
-          name: "Soybeans",
-          symbol: "OANDA:SOYBNUSD"
-        },
-        {
-          name: "Soybean Oil",
-          symbol: "FOREXCOM:SOYUSD"
-        },
-        {
-          name: "Soybean Meal",
-          symbol: "CMCMARKETS:SOYMEAL"
-        }
+        { ticker: "ZC=F", name: "Corn" },
+        { ticker: "ZW=F", name: "Wheat" },
+        { ticker: "KE=F", name: "KC HRW Wheat" },
+        { ticker: "ZS=F", name: "Soybeans" },
+        { ticker: "ZL=F", name: "Soybean Oil" },
+        { ticker: "ZM=F", name: "Soybean Meal" },
+        { ticker: "ZO=F", name: "Oats" },
+        { ticker: "ZR=F", name: "Rough Rice" }
       ],
-
       "Softs": [
-        {
-          name: "Coffee",
-          symbol: "FOREXCOM:COFFEE"
-        },
-        {
-          name: "Sugar",
-          symbol: "FOREXCOM:SUGAR"
-        },
-        {
-          name: "Cocoa",
-          symbol: "CAPITALCOM:COCOA"
-        },
-        {
-          name: "Cotton",
-          symbol: "FOREXCOM:COTTON"
-        },
-        {
-          name: "Orange Juice",
-          symbol: "CITYINDEX:ORANGEJUICECFD"
-        }
+        { ticker: "KC=F", name: "Coffee" },
+        { ticker: "SB=F", name: "Sugar" },
+        { ticker: "CC=F", name: "Cocoa" },
+        { ticker: "CT=F", name: "Cotton" },
+        { ticker: "OJ=F", name: "Orange Juice" }
       ],
-
       "Livestock": [
-        {
-          name: "Live Cattle",
-          symbol: "CITYINDEX:LIVECATTLECFD"
-        },
-        {
-          name: "Lean Hogs",
-          symbol: "CITYINDEX:LEANHOGSCFD"
-        }
+        { ticker: "LE=F", name: "Live Cattle" },
+        { ticker: "HE=F", name: "Lean Hogs" },
+        { ticker: "GF=F", name: "Feeder Cattle" }
       ]
     };
 
-    /*
-      Hoher Kontrast für die Auswahlfelder und die Hauptlinie.
-      TradingView legt die Farben weiterer Vergleichsreihen selbst fest.
-    */
-    const COLOR_PALETTE = [
-      "#005F73",
-      "#D00000",
-      "#0077B6",
-      "#7B2CBF",
-      "#D97706",
-      "#2A9D8F",
-      "#C1121F",
-      "#4D7C0F",
-      "#A21CAF",
-      "#0F766E",
-      "#9A3412",
-      "#1D4ED8"
-    ];
-
-    const DEFAULT_SYMBOLS = [
-      "TVC:USOIL",
-      "TVC:UKOIL",
-      "OANDA:NATGASUSD",
-      "TVC:GOLD",
-      "TVC:SILVER",
-      "CAPITALCOM:XCUUSD"
-    ];
+    const DEFAULT_TICKERS = ["CL=F", "BZ=F", "NG=F", "GC=F", "HG=F", "ZC=F"];
 
     /*
-      Bei mehr Reihen wiederholt TradingView später seine Farben.
-      Für einen gut lesbaren Vergleich werden maximal zwölf Reihen gerendert.
+      Fixed, high-contrast colors. These are used in the actual line chart,
+      the legend, the tooltip, and the selection fields.
     */
-    const MAX_RENDERED_SERIES = 12;
-    const AUTO_REFRESH_MS = 60 * 1000;
+    const COLOR_BY_TICKER = {
+      "CL=F": "#003f5c", "BZ=F": "#ef5675", "NG=F": "#2f4b7c",
+      "RB=F": "#ffa600", "HO=F": "#7a5195",
+
+      "GC=F": "#c99700", "SI=F": "#6b7280", "HG=F": "#d04a02",
+      "PL=F": "#5d9cec", "PA=F": "#a42cd6", "ALI=F": "#00a6a6",
+
+      "ZC=F": "#6a994e", "ZW=F": "#bc6c25", "KE=F": "#99582a",
+      "ZS=F": "#40916c", "ZL=F": "#e9c46a", "ZM=F": "#386641",
+      "ZO=F": "#90be6d", "ZR=F": "#577590",
+
+      "KC=F": "#6f4e37", "SB=F": "#e76f51", "CC=F": "#5f0f40",
+      "CT=F": "#4d908e", "OJ=F": "#f77f00",
+
+      "LE=F": "#9b2226", "HE=F": "#bb3e03", "GF=F": "#495057"
+    };
 
     const ALL_COMMODITIES = Object.values(COMMODITY_GROUPS).flat();
+    const AUTO_REFRESH_MS = 60 * 1000;
 
-    let customSymbols = [];
-    let renderTimeout = null;
+    let dataset = null;
+    let chart = null;
+    let seriesEntries = [];
+    let fetchInProgress = false;
+    let renderTimer = null;
+    let resizeObserver = null;
 
-    function setStatus(message) {
-      document.getElementById("status").textContent = message;
+    function getColor(ticker) {
+      return COLOR_BY_TICKER[ticker] || "#1d4ed8";
     }
 
-    function normaliseSymbol(symbol) {
-      return symbol.trim().toUpperCase();
+    function setStatus(text) {
+      document.getElementById("status").textContent = text;
     }
 
-    function isValidTradingViewSymbol(symbol) {
-      return /^[A-Z0-9_]+:[A-Z0-9!._-]+$/.test(symbol);
-    }
-
-    function getColorForSymbol(symbol) {
-      const knownIndex = ALL_COMMODITIES.findIndex(
-        (item) => item.symbol === symbol
-      );
-
-      const customIndex = customSymbols.findIndex(
-        (item) => item.symbol === symbol
-      );
-
-      const index = knownIndex >= 0
-        ? knownIndex
-        : ALL_COMMODITIES.length + Math.max(customIndex, 0);
-
-      return COLOR_PALETTE[index % COLOR_PALETTE.length];
-    }
-
-    function createCommodityLabel(commodity) {
-      const label = document.createElement("label");
-      label.className = "commodity-item";
-
-      label.style.setProperty(
-        "--series-color",
-        getColorForSymbol(commodity.symbol)
-      );
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.className = "commodity-checkbox";
-      checkbox.value = commodity.symbol;
-      checkbox.dataset.name = commodity.name;
-
-      checkbox.checked = DEFAULT_SYMBOLS.includes(commodity.symbol);
-
-      checkbox.addEventListener("change", scheduleRender);
-
-      const text = document.createElement("span");
-
-      const name = document.createElement("span");
-      name.textContent = commodity.name;
-
-      const symbol = document.createElement("span");
-      symbol.className = "symbol-code";
-      symbol.textContent = ` (${commodity.symbol})`;
-
-      text.appendChild(name);
-      text.appendChild(symbol);
-
-      label.appendChild(checkbox);
-      label.appendChild(text);
-
-      return label;
-    }
-
-    function buildCommodityGroups() {
-      const container = document.getElementById("commodity-groups");
-      container.innerHTML = "";
-
-      Object.entries(COMMODITY_GROUPS).forEach(
-        ([groupName, commodities], groupIndex) => {
-          const details = document.createElement("details");
-
-          if (groupIndex < 2) {
-            details.open = true;
-          }
-
-          const summary = document.createElement("summary");
-          summary.textContent = groupName;
-
-          const actions = document.createElement("div");
-          actions.className = "group-actions";
-
-          const onlyButton = document.createElement("button");
-          onlyButton.type = "button";
-          onlyButton.textContent = "Nur diese Gruppe";
-
-          onlyButton.addEventListener("click", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            selectOnlyGroup(groupName);
-          });
-
-          const addButton = document.createElement("button");
-          addButton.type = "button";
-          addButton.textContent = "Gruppe ergänzen";
-
-          addButton.addEventListener("click", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            addGroup(groupName);
-          });
-
-          actions.appendChild(onlyButton);
-          actions.appendChild(addButton);
-
-          const list = document.createElement("div");
-          list.className = "commodity-list";
-
-          commodities.forEach((commodity) => {
-            list.appendChild(createCommodityLabel(commodity));
-          });
-
-          details.appendChild(summary);
-          details.appendChild(actions);
-          details.appendChild(list);
-
-          container.appendChild(details);
-        }
-      );
-    }
-
-    function getCheckedSymbols() {
-      return Array.from(
-        document.querySelectorAll(".commodity-checkbox:checked")
-      ).map((checkbox) => checkbox.value);
-    }
-
-    function setCheckedSymbols(symbols) {
-      const targetSymbols = new Set(symbols);
-
-      document.querySelectorAll(".commodity-checkbox").forEach(
-        (checkbox) => {
-          checkbox.checked = targetSymbols.has(checkbox.value);
-        }
-      );
-    }
-
-    function getSelectedAssets() {
-      const knownAssets = Array.from(
-        document.querySelectorAll(".commodity-checkbox:checked")
-      ).map((checkbox) => ({
-        name: checkbox.dataset.name,
-        symbol: checkbox.value,
-        color: getColorForSymbol(checkbox.value)
-      }));
-
-      const customAssets = customSymbols.map((item) => ({
-        name: item.name,
-        symbol: item.symbol,
-        color: getColorForSymbol(item.symbol)
-      }));
-
-      const uniqueSymbols = new Set();
-
-      return [...knownAssets, ...customAssets].filter((asset) => {
-        if (uniqueSymbols.has(asset.symbol)) {
-          return false;
-        }
-
-        uniqueSymbols.add(asset.symbol);
-        return true;
-      });
-    }
-
-    function getCurrentScaleMode() {
-      const selected = document.querySelector(
-        'input[name="scale-mode"]:checked'
-      );
-
+    function getScaleMode() {
+      const selected = document.querySelector('input[name="scale-mode"]:checked');
       return selected ? selected.value : "indexed";
     }
 
-    function getScaleLabel(scaleMode) {
-      if (scaleMode === "price") {
-        return "Preis";
-      }
-
-      if (scaleMode === "log") {
-        return "logarithmischer Preis";
-      }
-
+    function getScaleText(mode) {
+      if (mode === "price") return "Preis";
+      if (mode === "log") return "logarithmischer Preis";
       return "Indexiert auf 100";
     }
 
-    function selectOnlyGroup(groupName) {
-      const groupSymbols = COMMODITY_GROUPS[groupName].map(
-        (commodity) => commodity.symbol
-      );
+    function formatTimestamp(timestamp) {
+      if (!timestamp) return "unbekannt";
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.valueOf())) return timestamp;
 
-      setCheckedSymbols(groupSymbols);
-      customSymbols = [];
-      renderCustomSymbols();
-      renderTradingViewChart();
+      return new Intl.DateTimeFormat("de-DE", {
+        dateStyle: "medium",
+        timeStyle: "short"
+      }).format(date);
     }
 
-    function addGroup(groupName) {
-      const groupSymbols = new Set(
-        COMMODITY_GROUPS[groupName].map(
-          (commodity) => commodity.symbol
-        )
-      );
+    function formatDate(time) {
+      if (typeof time === "string") {
+        return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" })
+          .format(new Date(`${time}T12:00:00Z`));
+      }
 
-      document.querySelectorAll(".commodity-checkbox").forEach(
-        (checkbox) => {
-          if (groupSymbols.has(checkbox.value)) {
-            checkbox.checked = true;
-          }
-        }
-      );
+      if (time && typeof time === "object" && "year" in time) {
+        return `${String(time.day).padStart(2, "0")}.${String(time.month).padStart(2, "0")}.${time.year}`;
+      }
 
-      renderTradingViewChart();
+      return "";
     }
 
-    function selectAll() {
-      const allSymbols = ALL_COMMODITIES.map(
-        (commodity) => commodity.symbol
-      );
+    function formatValue(value, mode) {
+      if (!Number.isFinite(value)) return "–";
 
-      setCheckedSymbols(allSymbols);
-      renderTradingViewChart();
+      if (mode === "indexed") {
+        return value.toLocaleString("de-DE", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+
+      return value.toLocaleString("de-DE", { maximumSignificantDigits: 6 });
     }
 
-    function clearAll() {
-      setCheckedSymbols([]);
-      customSymbols = [];
-      renderCustomSymbols();
-      renderTradingViewChart();
-    }
+    function buildControls() {
+      const root = document.getElementById("commodity-groups");
+      root.innerHTML = "";
 
-    function selectDefault() {
-      setCheckedSymbols(DEFAULT_SYMBOLS);
-      customSymbols = [];
-      renderCustomSymbols();
-      renderTradingViewChart();
-    }
+      Object.entries(COMMODITY_GROUPS).forEach(([groupName, commodities], index) => {
+        const details = document.createElement("details");
+        details.open = index < 2;
 
-    function renderCustomSymbols() {
-      const container = document.getElementById("custom-symbol-list");
-      container.innerHTML = "";
+        const summary = document.createElement("summary");
+        summary.textContent = groupName;
 
-      customSymbols.forEach((item, index) => {
-        const wrapper = document.createElement("div");
-        wrapper.className = "custom-item";
+        const actions = document.createElement("div");
+        actions.className = "group-actions";
 
-        wrapper.style.setProperty(
-          "--series-color",
-          getColorForSymbol(item.symbol)
-        );
-
-        const text = document.createElement("span");
-        text.textContent = `${item.name} (${item.symbol})`;
-
-        const removeButton = document.createElement("button");
-        removeButton.type = "button";
-        removeButton.title = "Entfernen";
-        removeButton.textContent = "×";
-
-        removeButton.addEventListener("click", () => {
-          customSymbols.splice(index, 1);
-          renderCustomSymbols();
-          renderTradingViewChart();
+        const onlyButton = document.createElement("button");
+        onlyButton.type = "button";
+        onlyButton.textContent = "Nur diese Gruppe";
+        onlyButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setCheckedTickers(commodities.map(item => item.ticker));
+          requestRender();
         });
 
-        wrapper.appendChild(text);
-        wrapper.appendChild(removeButton);
+        const addButton = document.createElement("button");
+        addButton.type = "button";
+        addButton.textContent = "Gruppe ergänzen";
+        addButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
 
-        container.appendChild(wrapper);
-      });
-    }
-
-    function addCustomSymbol() {
-      const input = document.getElementById("custom-symbol");
-      const symbol = normaliseSymbol(input.value);
-
-      if (!symbol) {
-        return;
-      }
-
-      if (!isValidTradingViewSymbol(symbol)) {
-        setStatus(
-          "Ungültiges Format. Beispiel: CAPITALCOM:NICKEL"
-        );
-        return;
-      }
-
-      const alreadySelected = getSelectedAssets().some(
-        (asset) => asset.symbol === symbol
-      );
-
-      if (alreadySelected) {
-        setStatus(`${symbol} ist bereits ausgewählt.`);
-        input.value = "";
-        return;
-      }
-
-      customSymbols.push({
-        name: symbol,
-        symbol: symbol
-      });
-
-      input.value = "";
-      renderCustomSymbols();
-      renderTradingViewChart();
-    }
-
-    function writeStateToUrl(assets, range, scaleMode) {
-      const params = new URLSearchParams(window.location.search);
-
-      params.set(
-        "symbols",
-        assets.map((asset) => asset.symbol).join(",")
-      );
-
-      params.set("range", range);
-      params.set("scale", scaleMode);
-
-      const newUrl =
-        window.location.pathname + "?" + params.toString();
-
-      history.replaceState({}, "", newUrl);
-    }
-
-    function loadStateFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-
-      const symbolsParam = params.get("symbols");
-      const rangeParam = params.get("range");
-      const scaleParam = params.get("scale");
-
-      if (rangeParam) {
-        const rangeSelect = document.getElementById("range-select");
-
-        const isAllowed = Array.from(rangeSelect.options).some(
-          (option) => option.value === rangeParam
-        );
-
-        if (isAllowed) {
-          rangeSelect.value = rangeParam;
-        }
-      }
-
-      if (
-        scaleParam === "price" ||
-        scaleParam === "indexed" ||
-        scaleParam === "log"
-      ) {
-        const scaleInput = document.querySelector(
-          `input[name="scale-mode"][value="${scaleParam}"]`
-        );
-
-        if (scaleInput) {
-          scaleInput.checked = true;
-        }
-      }
-
-      if (!symbolsParam) {
-        return;
-      }
-
-      const requestedSymbols = symbolsParam
-        .split(",")
-        .map((symbol) => normaliseSymbol(symbol))
-        .filter(Boolean);
-
-      const knownSymbols = new Set();
-
-      document.querySelectorAll(".commodity-checkbox").forEach(
-        (checkbox) => {
-          knownSymbols.add(checkbox.value);
-
-          checkbox.checked = requestedSymbols.includes(
-            checkbox.value
-          );
-        }
-      );
-
-      requestedSymbols.forEach((symbol) => {
-        if (
-          !knownSymbols.has(symbol) &&
-          isValidTradingViewSymbol(symbol)
-        ) {
-          customSymbols.push({
-            name: symbol,
-            symbol: symbol
+          const groupTickers = new Set(commodities.map(item => item.ticker));
+          document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
+            if (groupTickers.has(checkbox.value)) checkbox.checked = true;
           });
-        }
+          requestRender();
+        });
+
+        actions.append(onlyButton, addButton);
+
+        const list = document.createElement("div");
+        list.className = "commodity-list";
+
+        commodities.forEach((commodity) => {
+          const label = document.createElement("label");
+          label.className = "commodity-item";
+          label.style.setProperty("--series-color", getColor(commodity.ticker));
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "commodity-checkbox";
+          checkbox.value = commodity.ticker;
+          checkbox.dataset.name = commodity.name;
+          checkbox.checked = DEFAULT_TICKERS.includes(commodity.ticker);
+          checkbox.addEventListener("change", requestRender);
+
+          const text = document.createElement("span");
+          text.textContent = commodity.name;
+
+          const ticker = document.createElement("span");
+          ticker.className = "ticker";
+          ticker.textContent = ` (${commodity.ticker})`;
+
+          text.appendChild(ticker);
+          label.append(checkbox, text);
+          list.appendChild(label);
+        });
+
+        details.append(summary, actions, list);
+        root.appendChild(details);
+      });
+    }
+
+    function getCheckedTickers() {
+      return Array.from(document.querySelectorAll(".commodity-checkbox:checked"))
+        .map((checkbox) => checkbox.value);
+    }
+
+    function setCheckedTickers(tickers) {
+      const target = new Set(tickers);
+      document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
+        checkbox.checked = target.has(checkbox.value);
+      });
+    }
+
+    function getSelectedSeries() {
+      if (!dataset?.series) return [];
+      const selected = new Set(getCheckedTickers());
+      return dataset.series.filter((series) => selected.has(series.ticker));
+    }
+
+    function getCutoffDate(rangeKey) {
+      if (rangeKey === "max") return null;
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - Number.parseInt(rangeKey, 10));
+      return cutoff;
+    }
+
+    function transformData(series, mode, cutoff) {
+      let points = (series.data || [])
+        .map(([time, value]) => ({
+          time,
+          value: Number(value),
+          date: new Date(`${time}T12:00:00Z`)
+        }))
+        .filter((point) => Number.isFinite(point.value) && point.value > 0)
+        .filter((point) => !cutoff || point.date >= cutoff);
+
+      if (!points.length) return [];
+
+      if (mode === "indexed") {
+        const base = points[0].value;
+        return points.map((point) => ({
+          time: point.time,
+          value: (point.value / base) * 100
+        }));
+      }
+
+      return points.map((point) => ({ time: point.time, value: point.value }));
+    }
+
+    function resetChart() {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+
+      if (chart) {
+        chart.remove();
+        chart = null;
+      }
+
+      seriesEntries = [];
+      document.getElementById("chart").innerHTML = "";
+      document.getElementById("legend").innerHTML = "";
+      document.getElementById("tooltip").style.display = "none";
+    }
+
+    function createChart() {
+      const container = document.getElementById("chart");
+
+      chart = LightweightCharts.createChart(container, {
+        width: Math.max(container.clientWidth, 1),
+        height: Math.max(container.clientHeight, 1),
+        layout: {
+          background: { type: "solid", color: "#ffffff" },
+          textColor: "#475569",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 12
+        },
+        grid: {
+          vertLines: { color: "rgba(15, 23, 42, 0.08)" },
+          horzLines: { color: "rgba(15, 23, 42, 0.08)" }
+        },
+        leftPriceScale: { visible: false },
+        rightPriceScale: {
+          visible: true,
+          borderColor: "#cbd5e1",
+          entireTextOnly: true
+        },
+        timeScale: {
+          borderColor: "#cbd5e1",
+          timeVisible: false,
+          secondsVisible: false,
+          rightOffset: 2,
+          barSpacing: 7,
+          minBarSpacing: 2
+        },
+        crosshair: {
+          vertLine: {
+            color: "rgba(30, 41, 59, 0.45)",
+            width: 1,
+            style: LightweightCharts.LineStyle.Dashed,
+            labelBackgroundColor: "#475569"
+          },
+          horzLine: {
+            color: "rgba(30, 41, 59, 0.30)",
+            width: 1,
+            style: LightweightCharts.LineStyle.Dashed,
+            labelBackgroundColor: "#475569"
+          }
+        },
+        handleScroll: true,
+        handleScale: true
       });
 
-      renderCustomSymbols();
+      resizeObserver = new ResizeObserver(() => {
+        if (!chart) return;
+        chart.applyOptions({
+          width: Math.max(container.clientWidth, 1),
+          height: Math.max(container.clientHeight, 1)
+        });
+      });
+
+      resizeObserver.observe(container);
+      chart.subscribeCrosshairMove(updateTooltip);
     }
 
-    function buildScaleOverrides(scaleMode, mainColor) {
-      const isIndexed = scaleMode === "indexed";
-      const isLog = scaleMode === "log";
+    function setPriceScaleMode(mode) {
+      const scaleMode = mode === "log"
+        ? LightweightCharts.PriceScaleMode.Logarithmic
+        : LightweightCharts.PriceScaleMode.Normal;
 
-      return {
-        "mainSeriesProperties.priceAxisProperties.autoScale": true,
-        "mainSeriesProperties.priceAxisProperties.percentage": false,
-        "mainSeriesProperties.priceAxisProperties.indexedTo100": isIndexed,
-        "mainSeriesProperties.priceAxisProperties.log": isLog,
-        "mainSeriesProperties.priceAxisProperties.logDisabled": false,
-        "mainSeriesProperties.priceAxisProperties.percentageDisabled": false,
-
-        "mainSeriesProperties.lineStyle.color": mainColor,
-        "mainSeriesProperties.lineStyle.linewidth": 2
-      };
+      chart.applyOptions({
+        rightPriceScale: {
+          mode: scaleMode,
+          autoScale: true
+        }
+      });
     }
 
-    function renderEmptyState(message) {
-      const chartHost = document.getElementById("chart-host");
+    function addLegend(entry) {
+      const legend = document.getElementById("legend");
 
-      chartHost.innerHTML = `
-        <div class="empty-state">
-          ${message}
-        </div>
+      const item = document.createElement("span");
+      item.className = "legend-item";
+
+      const swatch = document.createElement("span");
+      swatch.className = "legend-swatch";
+      swatch.style.background = entry.color;
+
+      const name = document.createElement("span");
+      name.textContent = entry.name;
+
+      item.append(swatch, name);
+      legend.appendChild(item);
+    }
+
+    function updateTooltip(param) {
+      const tooltip = document.getElementById("tooltip");
+
+      if (!param?.time || !param?.point || param.point.x < 0 || param.point.y < 0) {
+        tooltip.style.display = "none";
+        return;
+      }
+
+      const mode = getScaleMode();
+      const rows = [];
+
+      seriesEntries.forEach((entry) => {
+        const point = param.seriesData.get(entry.api);
+        if (!point || !Number.isFinite(point.value)) return;
+
+        rows.push(`
+          <div class="tooltip-row">
+            <span class="tooltip-name">
+              <span class="tooltip-dot" style="background:${entry.color}"></span>
+              ${entry.name}
+            </span>
+            <strong>${formatValue(point.value, mode)}</strong>
+          </div>
+        `);
+      });
+
+      if (!rows.length) {
+        tooltip.style.display = "none";
+        return;
+      }
+
+      tooltip.innerHTML = `
+        <div class="tooltip-date">${formatDate(param.time)}</div>
+        ${rows.join("")}
       `;
+      tooltip.style.display = "block";
     }
 
-    function renderTradingViewChart() {
-      const selectedAssets = getSelectedAssets();
+    function renderChart() {
+      if (!dataset) return;
+
+      if (!window.LightweightCharts) {
+        setStatus("Die Chart-Bibliothek konnte nicht geladen werden. Bitte die Seite neu laden.");
+        return;
+      }
+
+      const selected = getSelectedSeries();
       const range = document.getElementById("range-select").value;
-      const scaleMode = getCurrentScaleMode();
+      const mode = getScaleMode();
+      const cutoff = getCutoffDate(range);
+      const chartElement = document.getElementById("chart");
 
-      if (selectedAssets.length === 0) {
-        renderEmptyState(
-          "Bitte mindestens einen Rohstoff-CFD auswählen."
-        );
-
+      if (!selected.length) {
+        resetChart();
+        chartElement.innerHTML = `<div class="empty-state">Bitte mindestens einen Rohstoff auswählen.</div>`;
         setStatus("Keine Zeitreihe ausgewählt.");
         return;
       }
 
-      const assets = selectedAssets.slice(0, MAX_RENDERED_SERIES);
-      const mainAsset = assets[0];
+      resetChart();
+      createChart();
+      setPriceScaleMode(mode);
 
-      const compareSymbols = assets.slice(1).map((asset) => ({
-        symbol: asset.symbol,
-        position: "SameScale"
-      }));
+      selected.forEach((series) => {
+        const data = transformData(series, mode, cutoff);
+        if (!data.length) return;
 
-      const chartHost = document.getElementById("chart-host");
+        const color = getColor(series.ticker);
 
-      const widgetContainer = document.createElement("div");
-      widgetContainer.className = "tradingview-widget-container";
-      widgetContainer.style.width = "100%";
-      widgetContainer.style.height = "100%";
+        const api = chart.addSeries(LightweightCharts.LineSeries, {
+          color,
+          lineWidth: 2,
+          lineType: LightweightCharts.LineType.Simple,
+          crosshairMarkerVisible: true,
+          crosshairMarkerRadius: 4,
+          crosshairMarkerBorderColor: color,
+          crosshairMarkerBackgroundColor: "#ffffff",
+          lastValueVisible: false,
+          priceLineVisible: false,
+          title: series.name,
+          priceFormat: {
+            type: "price",
+            precision: mode === "indexed" ? 2 : 4,
+            minMove: mode === "indexed" ? 0.01 : 0.0001
+          }
+        });
 
-      const widget = document.createElement("div");
-      widget.className = "tradingview-widget-container__widget";
-      widget.style.width = "100%";
-      widget.style.height = "calc(100% - 28px)";
+        api.setData(data);
 
-      const attribution = document.createElement("div");
-      attribution.className = "tradingview-widget-copyright";
-
-      const attributionLink = document.createElement("a");
-      attributionLink.href = "https://www.tradingview.com/";
-      attributionLink.target = "_blank";
-      attributionLink.rel = "noopener nofollow";
-      attributionLink.textContent = "Charts by TradingView";
-
-      attribution.appendChild(attributionLink);
-
-      const script = document.createElement("script");
-      script.type = "text/javascript";
-      script.async = true;
-      script.src =
-        "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-
-      script.textContent = JSON.stringify({
-        autosize: true,
-
-        symbol: mainAsset.symbol,
-        interval: "D",
-        range: range,
-
-        timezone: "Europe/Berlin",
-        theme: "light",
-        locale: "de_DE",
-
-        /*
-          2 = Linienchart
-        */
-        style: "2",
-
-        /*
-          Die Steuerung erfolgt über die eigenen Auswahlfelder oben.
-        */
-        hide_top_toolbar: true,
-        hide_side_toolbar: true,
-        hide_volume: true,
-        hide_legend: false,
-        withdateranges: false,
-
-        allow_symbol_change: false,
-        save_image: false,
-        calendar: false,
-        details: false,
-        hotlist: false,
-        watchlist: [],
-        studies: [],
-
-        /*
-          Weitere Rohstoffe als Vergleichsreihen.
-        */
-        compareSymbols: compareSymbols,
-
-        /*
-          Preis / Indexiert auf 100 / Logarithmisch.
-        */
-        overrides: buildScaleOverrides(
-          scaleMode,
-          mainAsset.color
-        ),
-
-        /*
-          Stellt sicher, dass beim Neuaufbau keine alte lokale
-          TradingView-Skaleneinstellung Vorrang bekommt.
-        */
-        settings_overrides: buildScaleOverrides(
-          scaleMode,
-          mainAsset.color
-        ),
-
-        backgroundColor: "#ffffff",
-        gridColor: "rgba(46, 46, 46, 0.08)",
-
-        support_host: "https://www.tradingview.com"
+        const entry = { api, name: series.name, color };
+        seriesEntries.push(entry);
+        addLegend(entry);
       });
 
-      widgetContainer.appendChild(widget);
-      widgetContainer.appendChild(attribution);
-      widgetContainer.appendChild(script);
-
-      chartHost.replaceChildren(widgetContainer);
-
-      writeStateToUrl(assets, range, scaleMode);
-
-      const assetNames = assets
-        .map((asset) => asset.name)
-        .join(", ");
-
-      let statusMessage =
-        `${assets.length} Reihen · ${getScaleLabel(scaleMode)} · ` +
-        `automatische Aktualisierung alle 60 Sekunden. ` +
-        `Auswahl: ${assetNames}`;
-
-      if (selectedAssets.length > MAX_RENDERED_SERIES) {
-        statusMessage +=
-          ` · Es sind ${selectedAssets.length} ausgewählt, ` +
-          `angezeigt werden die ersten ${MAX_RENDERED_SERIES}.`;
+      if (!seriesEntries.length) {
+        resetChart();
+        chartElement.innerHTML = `<div class="empty-state">Für die aktuelle Auswahl liegen keine Daten vor.</div>`;
+        setStatus("Für diese Auswahl liegen keine darstellbaren Daten vor.");
+        return;
       }
 
-      if (scaleMode === "price" && assets.length > 1) {
-        statusMessage +=
-          " · Hinweis: Bei stark unterschiedlichen Preiseinheiten " +
-          "können einzelne Reihen optisch sehr flach wirken.";
+      chart.timeScale().fitContent();
+
+      setStatus(
+        `${seriesEntries.length} Reihen · ${getScaleText(mode)} · ` +
+        `Datenstand: ${formatTimestamp(dataset.generated_at)} · ` +
+        `Prüfung auf neue Daten alle 60 Sekunden.`
+      );
+    }
+
+    function requestRender() {
+      clearTimeout(renderTimer);
+      renderTimer = window.setTimeout(renderChart, 70);
+    }
+
+    async function loadData({ silent = false } = {}) {
+      if (fetchInProgress) return;
+      fetchInProgress = true;
+
+      try {
+        const response = await fetch(`data/commodities.json?cache=${Date.now()}`, {
+          cache: "no-store"
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const nextDataset = await response.json();
+
+        if (!Array.isArray(nextDataset.series) || !nextDataset.series.length) {
+          throw new Error("Die Datendatei enthält noch keine Zeitreihen.");
+        }
+
+        const oldSignature = dataset
+          ? `${dataset.generated_at}|${dataset.series.length}`
+          : "";
+
+        const newSignature =
+          `${nextDataset.generated_at}|${nextDataset.series.length}`;
+
+        dataset = nextDataset;
+
+        if (!silent || oldSignature !== newSignature) renderChart();
+      } catch (error) {
+        if (!dataset) {
+          resetChart();
+          document.getElementById("chart").innerHTML = `
+            <div class="empty-state">
+              Noch keine Daten verfügbar. Starte einmal den GitHub-Workflow
+              <b>Update data and deploy dashboard</b> im Tab <b>Actions</b>.
+            </div>
+          `;
+        }
+
+        setStatus(`Daten konnten nicht geladen werden: ${error.message}`);
+      } finally {
+        fetchInProgress = false;
       }
-
-      setStatus(statusMessage);
-
-      document.title =
-        `Rohstoff-CFD Vergleich – ${getScaleLabel(scaleMode)}`;
     }
 
-    function scheduleRender() {
-      clearTimeout(renderTimeout);
-
-      renderTimeout = setTimeout(() => {
-        renderTradingViewChart();
-      }, 100);
-    }
-
-    document
-      .getElementById("energy-only")
-      .addEventListener("click", () => {
-        selectOnlyGroup("Energy");
-      });
-
-    document
-      .getElementById("standard-selection")
-      .addEventListener("click", selectDefault);
-
-    document
-      .getElementById("select-all")
-      .addEventListener("click", selectAll);
-
-    document
-      .getElementById("clear-all")
-      .addEventListener("click", clearAll);
-
-    document
-      .getElementById("range-select")
-      .addEventListener("change", scheduleRender);
-
-    document.querySelectorAll(
-      'input[name="scale-mode"]'
-    ).forEach((input) => {
-      input.addEventListener("change", scheduleRender);
+    document.getElementById("energy-only").addEventListener("click", () => {
+      setCheckedTickers(COMMODITY_GROUPS.Energy.map(item => item.ticker));
+      requestRender();
     });
 
-    document
-      .getElementById("add-custom-symbol")
-      .addEventListener("click", addCustomSymbol);
+    document.getElementById("default-selection").addEventListener("click", () => {
+      setCheckedTickers(DEFAULT_TICKERS);
+      requestRender();
+    });
 
-    document
-      .getElementById("custom-symbol")
-      .addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          addCustomSymbol();
-        }
-      });
+    document.getElementById("select-all").addEventListener("click", () => {
+      setCheckedTickers(ALL_COMMODITIES.map(item => item.ticker));
+      requestRender();
+    });
 
-    buildCommodityGroups();
-    loadStateFromUrl();
-    renderTradingViewChart();
+    document.getElementById("clear-all").addEventListener("click", () => {
+      setCheckedTickers([]);
+      requestRender();
+    });
 
-    /*
-      Der Chart wird zusätzlich jede Minute vollständig neu geladen.
-      Dadurch wird die Auswahl behalten und aktuelle Daten werden
-      erneut vom TradingView-Widget abgerufen.
-    */
-    setInterval(() => {
-      renderTradingViewChart();
-    }, AUTO_REFRESH_MS);
+    document.getElementById("range-select").addEventListener("change", requestRender);
+
+    document.querySelectorAll('input[name="scale-mode"]').forEach((input) => {
+      input.addEventListener("change", requestRender);
+    });
+
+    buildControls();
+    loadData();
+
+    // The page checks whether the deployed JSON has changed every minute.
+    window.setInterval(() => loadData({ silent: true }), AUTO_REFRESH_MS);
   </script>
 </body>
 </html>
