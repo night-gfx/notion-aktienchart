@@ -327,6 +327,14 @@
             Logarithmisch
           </label>
         </div>
+
+        <label class="control-label">
+          Linienform:
+          <select id="line-shape-select">
+            <option value="normal" selected>Normal</option>
+            <option value="curved">Geglättet / kurvig</option>
+          </select>
+        </label>
       </div>
 
       <div id="commodity-groups" class="groups"></div>
@@ -445,6 +453,20 @@
       if (mode === "price") return "Preis";
       if (mode === "log") return "logarithmischer Preis";
       return "Indexiert auf 100";
+    }
+
+    function getLineType() {
+      const lineShape = document.getElementById("line-shape-select").value;
+
+      return lineShape === "curved"
+        ? LightweightCharts.LineType.Curved
+        : LightweightCharts.LineType.Simple;
+    }
+
+    function getLineShapeText() {
+      return document.getElementById("line-shape-select").value === "curved"
+        ? "geglättete Linien"
+        : "normale Linien";
     }
 
     function formatTimestamp(timestamp) {
@@ -635,8 +657,8 @@
           fontSize: 12
         },
         grid: {
-          vertLines: { color: "rgba(15, 23, 42, 0.08)" },
-          horzLines: { color: "rgba(15, 23, 42, 0.08)" }
+          vertLines: { visible: false },
+          horzLines: { visible: false }
         },
         leftPriceScale: { visible: false },
         rightPriceScale: {
@@ -784,7 +806,7 @@
         const api = chart.addSeries(LightweightCharts.LineSeries, {
           color,
           lineWidth: 2,
-          lineType: LightweightCharts.LineType.Simple,
+          lineType: getLineType(),
           crosshairMarkerVisible: true,
           crosshairMarkerRadius: 4,
           crosshairMarkerBorderColor: color,
@@ -817,6 +839,7 @@
 
       setStatus(
         `${seriesEntries.length} Reihen · ${getScaleText(mode)} · ` +
+        `${getLineShapeText()} · tägliche Schlusskurse · ` +
         `Datenstand: ${formatTimestamp(dataset.generated_at)} · ` +
         `Prüfung auf neue Daten alle 60 Sekunden.`
       );
@@ -892,6 +915,7 @@
     });
 
     document.getElementById("range-select").addEventListener("change", requestRender);
+    document.getElementById("line-shape-select").addEventListener("change", requestRender);
 
     document.querySelectorAll('input[name="scale-mode"]').forEach((input) => {
       input.addEventListener("change", requestRender);
