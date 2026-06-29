@@ -260,7 +260,7 @@
 
     .tooltip {
       position: absolute;
-      top: 76px;
+      top: 64px;
       left: 12px;
       z-index: 6;
       display: none;
@@ -776,18 +776,6 @@
       return dates.length ? dates[dates.length - 1] : null;
     }
 
-    function getEarliestDate(selectedSeries) {
-      const dates = selectedSeries
-        .map((series) => {
-          const points = getSeriesPoints(series);
-          return points.length ? points[0].time : null;
-        })
-        .filter(Boolean)
-        .sort();
-
-      return dates.length ? dates[0] : null;
-    }
-
     function getDisplayStartDate(latestDate) {
       if (!latestDate || displayRangeKey === "all") return null;
 
@@ -842,41 +830,94 @@
       return points.find((point) => point.time >= targetDate) || points[0];
     }
 
-    function transformSeriesData(series, viewMode, displayStartDate, basisDate) {
+    function transformSeriesData(series, viewMode, basisDate) {
+      /*
+        Every data point stays in the chart. The selected display period is
+        applied later to the time scale as a logical viewport, not by removing
+        observations. Therefore the user can still drag left afterwards.
+      */
       const allPoints = getSeriesPoints(series);
       if (!allPoints.length) return [];
 
       const basePoint = findBasePoint(allPoints, basisDate);
       if (!basePoint) return [];
 
-      let displayPoints = allPoints;
-
-      if (displayStartDate) {
-        displayPoints = allPoints.filter((point) => point.time >= displayStartDate);
-      }
-
-      if (!displayPoints.length) return [];
-
       if (viewMode === "price") {
-        return displayPoints;
+        return allPoints;
       }
 
       if (viewMode === "indexed") {
-        return displayPoints.map((point) => ({
+        return allPoints.map((point) => ({
           time: point.time,
           value: (point.value / basePoint.value) * 100
         }));
       }
 
       /*
-        Log-performance, not a logarithmic price scale:
+        Log-performance (not a logarithmic original-price axis):
         100 × ln(P_t / P_base)
-        The base date is therefore exactly 0.
       */
-      return displayPoints.map((point) => ({
+      return allPoints.map((point) => ({
         time: point.time,
         value: 100 * Math.log(point.value / basePoint.value)
       }));
+    }
+
+    function getTimeline(selectedSeries) {
+      return [...new Set(
+        selectedSeries.flatMap((series) =>
+          getSeriesPoints(series).map((point) => point.time)
+        )
+      )].sort();
+    }
+
+    function getLogicalDisplayRange(timeline, displayStartDate) {
+      if (!timeline.length || !displayStartDate) {
+        return null;
+      }
+
+      const firstVisibleIndex = timeline.findIndex(
+        (time) => time >= displayStartDate
+      );
+
+      if (firstVisibleIndex === -1) {
+        return null;
+      }
+
+      /*
+        Logical indices belong to the combined time scale, not to one
+        individual commodity series. A small margin preserves readability.
+      */
+      return {
+        from: Math.max(-0.5, firstVisibleIndex - 0.5),
+        to: timeline.length - 1 + 2
+      };
+    }
+
+    function applyDisplayViewport(logicalRange) {
+      if (!chart) return;
+
+      const apply = () => {
+        if (!chart) return;
+
+        if (logicalRange) {
+          chart.timeScale().setVisibleLogicalRange(logicalRange);
+        } else {
+          chart.timeScale().fitContent();
+        }
+      };
+
+      /*
+        A GitHub Pages / Notion iframe can receive its final dimensions only
+        after the first paint. Applying twice after layout prevents fitContent
+        or resizing from overriding the selected view.
+      */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          apply();
+          window.setTimeout(apply, 120);
+        });
+      });
     }
 
     function getLatestActualPrice(series) {
@@ -1134,9 +1175,11 @@
         return;
       }
 
-      const earliestDate = getEarliestDate(selected);
-      const latestDate = getLatestDate(selected);
+      const timeline = getTimeline(selected);
+      const latestDate = timeline.length ? timeline[timeline.length - 1] : null;
       const displayStartDate = getDisplayStartDate(latestDate);
+      const logicalRange = getLogicalDisplayRange(timeline, displayStartDate);
+
       const basisDate = getBasisTargetDate(
         selected,
         latestDate,
@@ -1150,7 +1193,6 @@
         const data = transformSeriesData(
           series,
           viewMode,
-          displayStartDate,
           basisDate
         );
 
@@ -1201,12 +1243,10 @@
       }
 
       /*
-        The chart now contains only the selected display period.
-        fitContent must therefore show exactly 1J / 3J / ... / Alles.
+        All history stays loaded. The buttons change only the visible logical
+        range of the time scale; "Alles" calls fitContent.
       */
-      requestAnimationFrame(() => {
-        if (chart) chart.timeScale().fitContent();
-      });
+      applyDisplayViewport(logicalRange);
 
       const displayedRange = displayStartDate
         ? `${displayStartDate} bis ${latestDate}`
@@ -1219,8 +1259,8 @@
       setStatus(
         `${seriesEntries.length} Reihen · ${getViewModeLabel(viewMode)} · ` +
         `Anzeige: ${displayedRange} · ` +
+        `X-Achse: ${logicalRange ? "Zeitfenster gesetzt" : "gesamte Historie"} · ` +
         `Indexbasis: ${basisText} · ` +
-        `Datei-Historie: ${earliestDate || "–"} bis ${latestDate || "–"} · ` +
         `tägliche Schlusskurse · Datenstand: ${formatTimestamp(dataset.generated_at)}.`
       );
     }

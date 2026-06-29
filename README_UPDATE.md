@@ -1,21 +1,21 @@
-# Bereinigtes Update
+# Fix: visible X-axis range
 
-Ersetze ausschließlich `index.html`.
+Replace only `index.html`.
 
-Änderungen:
-- Der Button **Nur Energy** wurde entfernt.
-- Die Zeitraum-Buttons arbeiten weiterhin als echte Datenfilter:
-  `1J | 3J | 5J | 10J | 20J | Alles`.
-- Im Status steht zusätzlich:
-  `Datei-Historie: [erstes Datum] bis [letztes Datum]`.
+## What was wrong
+The previous versions either filtered data or used a date-based viewport that
+could be overridden by the final iframe layout. Therefore the y-axis changed
+but the initial x-axis view sometimes stayed unchanged.
 
-## Wichtige Prüfung nach dem Hochladen
+## What this version does
+- all daily history is always loaded into Lightweight Charts™
+- `1J / 3J / 5J / 10J / 20J` uses `setVisibleLogicalRange()`
+- `Alles` uses `fitContent()`
+- the range is applied after two animation frames and again after 120 ms,
+  which is important inside a GitHub Pages / Notion iframe
+- the user can still drag left after a period is selected; that is deliberate,
+  because full history remains accessible
+- the button **Nur Energy** is removed
 
-1. Wähle **Alles**.
-2. Lies den neuen Status.
-
-- Steht dort beispielsweise `Datei-Historie: 1983-... bis 2026-...`,
-  aber der Chart startet trotzdem erst 2024, dann ist es ein Chart-/Browserproblem.
-- Steht dort `Datei-Historie: 2024-... bis 2026-...`, dann enthält
-  `data/commodities.json` selbst keine ältere Historie. Dann müssen wir
-  den GitHub-Action-Datenlauf reparieren, nicht die HTML-Datei.
+In the status, `X-Achse: Zeitfenster gesetzt` confirms that a specific range
+was applied.
