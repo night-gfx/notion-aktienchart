@@ -298,17 +298,6 @@
         <button id="select-all" type="button">Alle auswählen</button>
         <button id="clear-all" type="button">Alle abwählen</button>
 
-        <label class="control-label">
-          Zeitraum:
-          <select id="range-select">
-            <option value="1y">1 Jahr</option>
-            <option value="3y">3 Jahre</option>
-            <option value="5y">5 Jahre</option>
-            <option value="10y">10 Jahre</option>
-            <option value="max" selected>Maximal verfügbar</option>
-          </select>
-        </label>
-
         <div class="mode-box" aria-label="Skalierungsmodus">
           <span class="mode-title">Skala:</span>
 
@@ -328,13 +317,6 @@
           </label>
         </div>
 
-        <label class="control-label">
-          Linienform:
-          <select id="line-shape-select">
-            <option value="normal" selected>Normal</option>
-            <option value="curved">Geglättet / kurvig</option>
-          </select>
-        </label>
       </div>
 
       <div id="commodity-groups" class="groups"></div>
@@ -358,7 +340,7 @@
 
   <script>
     /*
-      The page itself only reads data/commodities.json from GitHub Pages.
+      The page always shows each selected series from its first available observation.
       The GitHub workflow writes this JSON from Yahoo Finance. No browser
       request is made to Yahoo Finance, avoiding CORS errors.
     */
@@ -453,20 +435,6 @@
       if (mode === "price") return "Preis";
       if (mode === "log") return "logarithmischer Preis";
       return "Indexiert auf 100";
-    }
-
-    function getLineType() {
-      const lineShape = document.getElementById("line-shape-select").value;
-
-      return lineShape === "curved"
-        ? LightweightCharts.LineType.Curved
-        : LightweightCharts.LineType.Simple;
-    }
-
-    function getLineShapeText() {
-      return document.getElementById("line-shape-select").value === "curved"
-        ? "geglättete Linien"
-        : "normale Linien";
     }
 
     function formatTimestamp(timestamp) {
@@ -597,22 +565,14 @@
       return dataset.series.filter((series) => selected.has(series.ticker));
     }
 
-    function getCutoffDate(rangeKey) {
-      if (rangeKey === "max") return null;
-      const cutoff = new Date();
-      cutoff.setFullYear(cutoff.getFullYear() - Number.parseInt(rangeKey, 10));
-      return cutoff;
-    }
-
-    function transformData(series, mode, cutoff) {
+    function transformData(series, mode) {
       let points = (series.data || [])
         .map(([time, value]) => ({
           time,
           value: Number(value),
           date: new Date(`${time}T12:00:00Z`)
         }))
-        .filter((point) => Number.isFinite(point.value) && point.value > 0)
-        .filter((point) => !cutoff || point.date >= cutoff);
+        .filter((point) => Number.isFinite(point.value) && point.value > 0);
 
       if (!points.length) return [];
 
@@ -781,9 +741,7 @@
       }
 
       const selected = getSelectedSeries();
-      const range = document.getElementById("range-select").value;
       const mode = getScaleMode();
-      const cutoff = getCutoffDate(range);
       const chartElement = document.getElementById("chart");
 
       if (!selected.length) {
@@ -798,7 +756,7 @@
       setPriceScaleMode(mode);
 
       selected.forEach((series) => {
-        const data = transformData(series, mode, cutoff);
+        const data = transformData(series, mode);
         if (!data.length) return;
 
         const color = getColor(series.ticker);
@@ -806,7 +764,7 @@
         const api = chart.addSeries(LightweightCharts.LineSeries, {
           color,
           lineWidth: 2,
-          lineType: getLineType(),
+          lineType: LightweightCharts.LineType.Simple,
           crosshairMarkerVisible: true,
           crosshairMarkerRadius: 4,
           crosshairMarkerBorderColor: color,
@@ -839,7 +797,7 @@
 
       setStatus(
         `${seriesEntries.length} Reihen · ${getScaleText(mode)} · ` +
-        `${getLineShapeText()} · tägliche Schlusskurse · ` +
+        `ab erster verfügbarer Beobachtung · tägliche Schlusskurse · ` +
         `Datenstand: ${formatTimestamp(dataset.generated_at)} · ` +
         `Prüfung auf neue Daten alle 60 Sekunden.`
       );
@@ -913,9 +871,6 @@
       setCheckedTickers([]);
       requestRender();
     });
-
-    document.getElementById("range-select").addEventListener("change", requestRender);
-    document.getElementById("line-shape-select").addEventListener("change", requestRender);
 
     document.querySelectorAll('input[name="scale-mode"]').forEach((input) => {
       input.addEventListener("change", requestRender);

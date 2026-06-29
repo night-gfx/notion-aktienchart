@@ -1,18 +1,10 @@
-# Update: tägliche Daten, weißer Hintergrund, Linienform
+# Update: vollständige Historie
 
-This update replaces only two existing files:
-
-```text
-index.html
-scripts/update_commodities.py
-```
-
-After both files are committed, GitHub automatically starts the existing
-workflow **Update data and deploy dashboard**. That workflow overwrites
-`data/commodities.json` with daily close prices and redeploys the website.
+Replace only `index.html`.
 
 Changes:
-- **Linienform** select: `Normal` or `Geglättet / kurvig`
-- no horizontal or vertical grid lines
-- pure white chart backdrop
-- daily historical closing prices instead of weekly observations
+- the **Zeitraum** control has been removed
+- the **Linienform** control has been removed
+- every selected series is shown from its own first available daily observation
+  through the most recent observation
+- all lines use the normal/straight line form
