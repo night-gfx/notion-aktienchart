@@ -1024,11 +1024,17 @@
         const points = getSeriesPoints(series, getViewMode(), basisTargetDate);
         if (points.length === 0) return;
 
-        const api = chart.addLineSeries({
+        const lineOptions = {
           color: getColor(series.ticker),
           lineWidth: 2,
           lastValueVisible: false
-        });
+        };
+
+        // Lightweight Charts 5.x uses addSeries(LineSeries, options).
+        // The fallback keeps the file compatible with older 4.x builds.
+        const api = typeof chart.addSeries === "function"
+          ? chart.addSeries(window.LightweightCharts.LineSeries, lineOptions)
+          : chart.addLineSeries(lineOptions);
 
         api.setData(points);
         const latestPrice = getLatestActualPrice(series);
