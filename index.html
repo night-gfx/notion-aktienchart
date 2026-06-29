@@ -6,7 +6,7 @@
   <title>Rohstoffvergleich</title>
 
   <!-- Fixed Lightweight Charts™ version. -->
-  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js?v=20260629b"></script>
 
   <style>
     :root {
@@ -1030,11 +1030,12 @@
           lastValueVisible: false
         };
 
-        // Lightweight Charts 5.x uses addSeries(LineSeries, options).
-        // The fallback keeps the file compatible with older 4.x builds.
-        const api = typeof chart.addSeries === "function"
-          ? chart.addSeries(window.LightweightCharts.LineSeries, lineOptions)
-          : chart.addLineSeries(lineOptions);
+        // This page pins Lightweight Charts 5.2.0. In v5, lines are created
+        // with addSeries(LineSeries, options), not addLineSeries().
+        if (typeof chart.addSeries !== "function" || !window.LightweightCharts.LineSeries) {
+          throw new Error("Lightweight Charts 5.x did not load correctly. Please reload the page.");
+        }
+        const api = chart.addSeries(window.LightweightCharts.LineSeries, lineOptions);
 
         api.setData(points);
         const latestPrice = getLatestActualPrice(series);
