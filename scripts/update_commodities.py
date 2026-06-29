@@ -1,6 +1,6 @@
 """
-Download historical commodity futures data via yfinance and save it as a compact
-weekly JSON file for GitHub Pages. The latest daily close is appended as well.
+Download historical commodity futures data via yfinance and save daily
+closing prices as a JSON file for GitHub Pages.
 """
 
 from __future__ import annotations
@@ -74,8 +74,8 @@ def existing_series() -> dict[str, dict[str, Any]]:
         return {}
 
 
-def weekly_points(history: pd.DataFrame) -> list[list[object]]:
-    """Friday closes plus the most recent daily close."""
+def daily_points(history: pd.DataFrame) -> list[list[object]]:
+    """Return one closing price for every available trading day."""
     if history.empty:
         return []
 
@@ -90,19 +90,11 @@ def weekly_points(history: pd.DataFrame) -> list[list[object]]:
     close.index = index.normalize()
     close = close[~close.index.duplicated(keep="last")].sort_index()
 
-    weekly = close.resample("W-FRI").last().dropna()
-
-    if weekly.empty or close.index[-1] > weekly.index[-1]:
-        weekly.loc[close.index[-1]] = close.iloc[-1]
-
-    weekly = weekly[~weekly.index.duplicated(keep="last")].sort_index()
-
     return [
         [date.strftime("%Y-%m-%d"), round(float(value), 8)]
-        for date, value in weekly.items()
+        for date, value in close.items()
         if pd.notna(value) and float(value) > 0
     ]
-
 
 def download(ticker: str, attempts: int = 3) -> list[list[object]]:
     last_error: Exception | None = None
@@ -116,7 +108,7 @@ def download(ticker: str, attempts: int = 3) -> list[list[object]]:
                 actions=False,
             )
 
-            values = weekly_points(history)
+            values = daily_points(history)
             if values:
                 return values
 
@@ -166,7 +158,7 @@ def main() -> None:
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "frequency": "weekly_plus_latest_daily",
+        "frequency": "daily",
         "source": "Yahoo Finance via yfinance",
         "series": series,
         "errors": errors,
@@ -177,7 +169,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    print(f"Wrote {OUTPUT} — {len(series)} series, {len(errors)} errors.")
+    print(f"Wrote {OUTPUT} — daily data for {len(series)} series, {len(errors)} errors.")
 
 
 if __name__ == "__main__":
