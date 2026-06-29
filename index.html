@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rohstoffvergleich</title>
 
-  <!-- Pinned Lightweight Charts™ version so later library changes do not break the page. -->
+  <!-- Fixed Lightweight Charts™ version. -->
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
@@ -21,7 +21,8 @@
 
     * { box-sizing: border-box; }
 
-    html, body {
+    html,
+    body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -41,7 +42,7 @@
 
     .controls {
       flex: 0 0 auto;
-      max-height: 385px;
+      max-height: 410px;
       overflow-y: auto;
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
@@ -56,7 +57,7 @@
       margin-bottom: 10px;
     }
 
-    button, select {
+    button {
       min-height: 31px;
       padding: 5px 9px;
       border: 1px solid #c7d0dd;
@@ -65,10 +66,17 @@
       color: var(--text);
       font: inherit;
       font-size: 13px;
+      cursor: pointer;
     }
 
-    button { cursor: pointer; }
     button:hover { background: #eef2f7; }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    button:disabled:hover { background: #ffffff; }
 
     .primary {
       border-color: var(--primary);
@@ -88,17 +96,20 @@
       cursor: pointer;
     }
 
-    .period-box {
+    .period-box,
+    .mode-box {
       display: inline-flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       padding: 5px 6px;
       border: 1px solid var(--border);
       border-radius: 7px;
       background: #ffffff;
     }
 
-    .period-title {
+    .period-title,
+    .mode-title {
       margin-right: 3px;
       color: var(--muted);
       font-size: 12px;
@@ -114,9 +125,7 @@
       font-size: 12px;
     }
 
-    .period-button:hover {
-      background: #eef2f7;
-    }
+    .period-button:hover { background: #eef2f7; }
 
     .period-button.active {
       border-color: #bfdbfe;
@@ -125,21 +134,9 @@
       font-weight: 700;
     }
 
-    .mode-box {
-      display: inline-flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-      padding: 5px 8px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      background: #ffffff;
-    }
-
-    .mode-title {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
+    .basis-button {
+      min-width: 152px;
+      text-align: left;
     }
 
     .groups {
@@ -223,23 +220,30 @@
       position: absolute;
       top: 9px;
       left: 12px;
-      right: 60px;
+      right: 70px;
       z-index: 5;
       display: flex;
       flex-wrap: wrap;
-      gap: 5px 10px;
+      gap: 6px 10px;
       pointer-events: none;
       font-size: 11px;
     }
 
     .legend-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 86px;
+      padding: 3px 5px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.90);
+      color: #334155;
+    }
+
+    .legend-title {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      padding: 2px 5px;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.88);
-      color: #334155;
     }
 
     .legend-swatch {
@@ -249,13 +253,18 @@
       flex: 0 0 auto;
     }
 
+    .legend-price {
+      padding-left: 19px;
+      font-weight: 700;
+    }
+
     .tooltip {
       position: absolute;
-      top: 42px;
+      top: 64px;
       left: 12px;
       z-index: 6;
       display: none;
-      max-width: min(330px, calc(100% - 24px));
+      max-width: min(340px, calc(100% - 24px));
       padding: 8px 9px;
       border: 1px solid rgba(148, 163, 184, 0.75);
       border-radius: 7px;
@@ -319,9 +328,85 @@
       font-size: 15px;
     }
 
+    dialog {
+      width: min(480px, calc(100vw - 28px));
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 0;
+      color: var(--text);
+      font: inherit;
+      box-shadow: 0 18px 55px rgba(15, 23, 42, 0.23);
+    }
+
+    dialog::backdrop {
+      background: rgba(15, 23, 42, 0.34);
+    }
+
+    .dialog-body {
+      padding: 18px;
+    }
+
+    .dialog-title {
+      margin: 0 0 6px;
+      font-size: 17px;
+    }
+
+    .dialog-subtitle {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .basis-options {
+      display: grid;
+      gap: 8px;
+    }
+
+    .basis-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .basis-option:hover { background: #f8fafc; }
+
+    .custom-date-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    input[type="date"] {
+      min-height: 31px;
+      padding: 4px 6px;
+      border: 1px solid #c7d0dd;
+      border-radius: 5px;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
     @media (max-width: 700px) {
-      .controls { max-height: 475px; }
+      .controls { max-height: 500px; }
       .groups { grid-template-columns: 1fr; }
+      .legend { right: 8px; }
     }
   </style>
 </head>
@@ -336,7 +421,7 @@
         <button id="clear-all" type="button">Alle abwählen</button>
 
         <div class="period-box" aria-label="Angezeigter Zeitraum">
-          <span class="period-title">Zeitraum:</span>
+          <span class="period-title">Anzeige:</span>
           <button class="period-button" data-range="1y" type="button">1J</button>
           <button class="period-button" data-range="3y" type="button">3J</button>
           <button class="period-button" data-range="5y" type="button">5J</button>
@@ -345,25 +430,28 @@
           <button class="period-button active" data-range="all" type="button">Alles</button>
         </div>
 
-        <div class="mode-box" aria-label="Skalierungsmodus">
-          <span class="mode-title">Skala:</span>
+        <div class="mode-box" aria-label="Darstellungsart">
+          <span class="mode-title">Darstellung:</span>
 
           <label class="control-label">
-            <input type="radio" name="scale-mode" value="price">
+            <input type="radio" name="view-mode" value="price">
             Preis
           </label>
 
           <label class="control-label">
-            <input type="radio" name="scale-mode" value="indexed" checked>
-            Indexiert 100
+            <input type="radio" name="view-mode" value="indexed" checked>
+            Index 100
           </label>
 
           <label class="control-label">
-            <input type="radio" name="scale-mode" value="log">
-            Logarithmisch
+            <input type="radio" name="view-mode" value="log-return">
+            Log-Performance
           </label>
         </div>
 
+        <button id="basis-button" class="basis-button" type="button">
+          Indexbasis: Anzeige-Start
+        </button>
       </div>
 
       <div id="commodity-groups" class="groups"></div>
@@ -385,11 +473,70 @@
     </section>
   </main>
 
+  <dialog id="basis-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2 class="dialog-title">Indexbasis festlegen</h2>
+      <p class="dialog-subtitle">
+        Diese Wahl beeinflusst nur <b>Index 100</b> und <b>Log-Performance</b>.
+        Der Anzeigezeitraum oben bleibt davon getrennt.
+      </p>
+
+      <div class="basis-options">
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="display-start">
+          Beginn des Anzeigezeitraums
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="1y">
+          1 Jahr vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="3y">
+          3 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="5y">
+          5 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="10y">
+          10 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="20y">
+          20 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="first-common">
+          Erste gemeinsame Beobachtung aller ausgewählten Reihen
+        </label>
+      </div>
+
+      <label class="custom-date-row">
+        <input type="radio" name="basis-choice" value="custom">
+        Eigenes Datum:
+        <input id="custom-basis-date" type="date">
+      </label>
+
+      <div class="dialog-actions">
+        <button id="basis-cancel" type="button">Abbrechen</button>
+        <button id="basis-apply" class="primary" type="button">Übernehmen</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     /*
-      The page loads daily history and filters the rendered data to the selected period.
-      The GitHub workflow writes this JSON from Yahoo Finance. No browser
-      request is made to Yahoo Finance, avoiding CORS errors.
+      Data source:
+      The page reads daily prices from data/commodities.json.
+      GitHub Actions writes this file from Yahoo Finance.
+      No request is sent from the browser directly to Yahoo Finance.
     */
 
     const COMMODITY_GROUPS = {
@@ -434,10 +581,6 @@
 
     const DEFAULT_TICKERS = ["CL=F", "BZ=F", "NG=F", "GC=F", "HG=F", "ZC=F"];
 
-    /*
-      Fixed, high-contrast colors. These are used in the actual line chart,
-      the legend, the tooltip, and the selection fields.
-    */
     const COLOR_BY_TICKER = {
       "CL=F": "#003f5c", "BZ=F": "#ef5675", "NG=F": "#2f4b7c",
       "RB=F": "#ffa600", "HO=F": "#7a5195",
@@ -461,10 +604,18 @@
     let dataset = null;
     let chart = null;
     let seriesEntries = [];
+    let resizeObserver = null;
     let fetchInProgress = false;
     let renderTimer = null;
-    let resizeObserver = null;
-    let currentRangeKey = "all";
+
+    /*
+      State 1: Which dates are displayed on the x-axis.
+      State 2: Which date is used as base for Index 100 / Log-Performance.
+      These are intentionally separate.
+    */
+    let displayRangeKey = "all";
+    let indexBasisKey = "display-start";
+    let customBasisDate = "";
 
     function getColor(ticker) {
       return COLOR_BY_TICKER[ticker] || "#1d4ed8";
@@ -474,18 +625,18 @@
       document.getElementById("status").textContent = text;
     }
 
-    function getScaleMode() {
-      const selected = document.querySelector('input[name="scale-mode"]:checked');
+    function getViewMode() {
+      const selected = document.querySelector('input[name="view-mode"]:checked');
       return selected ? selected.value : "indexed";
     }
 
-    function getScaleText(mode) {
+    function getViewModeLabel(mode) {
       if (mode === "price") return "Preis";
-      if (mode === "log") return "logarithmischer Preis";
-      return "Indexiert auf 100";
+      if (mode === "log-return") return "Log-Performance";
+      return "Index 100";
     }
 
-    function getRangeLabel() {
+    function getDisplayRangeLabel() {
       const labels = {
         "1y": "letztes Jahr",
         "3y": "letzte 3 Jahre",
@@ -495,32 +646,27 @@
         "all": "gesamte Historie"
       };
 
-      return labels[currentRangeKey] || "gesamte Historie";
+      return labels[displayRangeKey] || "gesamte Historie";
     }
 
-    function getRangeStartDate(latestTime) {
-      if (currentRangeKey === "all" || !latestTime) {
-        return null;
-      }
+    function getBasisLabel() {
+      const labels = {
+        "display-start": "Anzeige-Start",
+        "1y": "1 Jahr zurück",
+        "3y": "3 Jahre zurück",
+        "5y": "5 Jahre zurück",
+        "10y": "10 Jahre zurück",
+        "20y": "20 Jahre zurück",
+        "first-common": "erste gemeinsame Beobachtung",
+        "custom": customBasisDate ? customBasisDate : "eigenes Datum"
+      };
 
-      const years = Number.parseInt(currentRangeKey, 10);
-      const latestDate = new Date(`${latestTime}T12:00:00Z`);
-      latestDate.setUTCFullYear(latestDate.getUTCFullYear() - years);
-
-      return latestDate.toISOString().slice(0, 10);
-    }
-
-    function setActiveRangeButton() {
-      document.querySelectorAll(".period-button").forEach((button) => {
-        button.classList.toggle(
-          "active",
-          button.dataset.range === currentRangeKey
-        );
-      });
+      return labels[indexBasisKey] || "Anzeige-Start";
     }
 
     function formatTimestamp(timestamp) {
       if (!timestamp) return "unbekannt";
+
       const date = new Date(timestamp);
       if (Number.isNaN(date.valueOf())) return timestamp;
 
@@ -543,17 +689,188 @@
       return "";
     }
 
-    function formatValue(value, mode) {
+    function formatValue(value, viewMode) {
       if (!Number.isFinite(value)) return "–";
 
-      if (mode === "indexed") {
+      if (viewMode === "indexed") {
         return value.toLocaleString("de-DE", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
         });
       }
 
-      return value.toLocaleString("de-DE", { maximumSignificantDigits: 6 });
+      if (viewMode === "log-return") {
+        return value.toLocaleString("de-DE", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+
+      return value.toLocaleString("de-DE", {
+        maximumSignificantDigits: 7
+      });
+    }
+
+    function formatActualPrice(value) {
+      if (!Number.isFinite(value)) return "–";
+
+      return value.toLocaleString("de-DE", {
+        maximumSignificantDigits: 7
+      });
+    }
+
+    function subtractYears(dateString, years) {
+      const [year, month, day] = dateString.split("-").map(Number);
+      const date = new Date(Date.UTC(year - years, month - 1, day));
+      return date.toISOString().slice(0, 10);
+    }
+
+    function updatePeriodButtons() {
+      document.querySelectorAll(".period-button").forEach((button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.range === displayRangeKey
+        );
+      });
+    }
+
+    function updateBasisButton() {
+      const button = document.getElementById("basis-button");
+      const isPriceMode = getViewMode() === "price";
+
+      button.disabled = isPriceMode;
+      button.textContent = isPriceMode
+        ? "Indexbasis: nur bei Index / Log"
+        : `Indexbasis: ${getBasisLabel()}`;
+    }
+
+    function getSelectedSeries() {
+      if (!dataset?.series) return [];
+
+      const selectedTickers = new Set(
+        Array.from(document.querySelectorAll(".commodity-checkbox:checked"))
+          .map((checkbox) => checkbox.value)
+      );
+
+      return dataset.series.filter((series) => selectedTickers.has(series.ticker));
+    }
+
+    function getSeriesPoints(series) {
+      return (series.data || [])
+        .map(([time, value]) => ({
+          time,
+          value: Number(value)
+        }))
+        .filter((point) => Number.isFinite(point.value) && point.value > 0)
+        .sort((a, b) => a.time.localeCompare(b.time));
+    }
+
+    function getLatestDate(selectedSeries) {
+      const dates = selectedSeries
+        .map((series) => {
+          const points = getSeriesPoints(series);
+          return points.length ? points[points.length - 1].time : null;
+        })
+        .filter(Boolean)
+        .sort();
+
+      return dates.length ? dates[dates.length - 1] : null;
+    }
+
+    function getDisplayStartDate(latestDate) {
+      if (!latestDate || displayRangeKey === "all") return null;
+
+      return subtractYears(
+        latestDate,
+        Number.parseInt(displayRangeKey, 10)
+      );
+    }
+
+    function getFirstCommonDate(selectedSeries) {
+      const firstDates = selectedSeries
+        .map((series) => {
+          const points = getSeriesPoints(series);
+          return points.length ? points[0].time : null;
+        })
+        .filter(Boolean)
+        .sort();
+
+      /*
+        The latest first date is the first point at which all selected
+        series can potentially be observed.
+      */
+      return firstDates.length ? firstDates[firstDates.length - 1] : null;
+    }
+
+    function getBasisTargetDate(selectedSeries, latestDate, displayStartDate) {
+      if (indexBasisKey === "display-start") {
+        return displayStartDate || getFirstCommonDate(selectedSeries);
+      }
+
+      if (indexBasisKey === "first-common") {
+        return getFirstCommonDate(selectedSeries);
+      }
+
+      if (indexBasisKey === "custom") {
+        return customBasisDate || displayStartDate || getFirstCommonDate(selectedSeries);
+      }
+
+      const years = Number.parseInt(indexBasisKey, 10);
+      if (Number.isFinite(years) && latestDate) {
+        return subtractYears(latestDate, years);
+      }
+
+      return displayStartDate || getFirstCommonDate(selectedSeries);
+    }
+
+    function findBasePoint(points, targetDate) {
+      if (!points.length) return null;
+
+      if (!targetDate) return points[0];
+
+      return points.find((point) => point.time >= targetDate) || points[0];
+    }
+
+    function transformSeriesData(series, viewMode, displayStartDate, basisDate) {
+      const allPoints = getSeriesPoints(series);
+      if (!allPoints.length) return [];
+
+      const basePoint = findBasePoint(allPoints, basisDate);
+      if (!basePoint) return [];
+
+      let displayPoints = allPoints;
+
+      if (displayStartDate) {
+        displayPoints = allPoints.filter((point) => point.time >= displayStartDate);
+      }
+
+      if (!displayPoints.length) return [];
+
+      if (viewMode === "price") {
+        return displayPoints;
+      }
+
+      if (viewMode === "indexed") {
+        return displayPoints.map((point) => ({
+          time: point.time,
+          value: (point.value / basePoint.value) * 100
+        }));
+      }
+
+      /*
+        Log-performance, not a logarithmic price scale:
+        100 × ln(P_t / P_base)
+        The base date is therefore exactly 0.
+      */
+      return displayPoints.map((point) => ({
+        time: point.time,
+        value: 100 * Math.log(point.value / basePoint.value)
+      }));
+    }
+
+    function getLatestActualPrice(series) {
+      const points = getSeriesPoints(series);
+      return points.length ? points[points.length - 1].value : NaN;
     }
 
     function buildControls() {
@@ -576,7 +893,7 @@
         onlyButton.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          setCheckedTickers(commodities.map(item => item.ticker));
+          setCheckedTickers(commodities.map((item) => item.ticker));
           requestRender();
         });
 
@@ -587,9 +904,9 @@
           event.preventDefault();
           event.stopPropagation();
 
-          const groupTickers = new Set(commodities.map(item => item.ticker));
+          const tickers = new Set(commodities.map((item) => item.ticker));
           document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
-            if (groupTickers.has(checkbox.value)) checkbox.checked = true;
+            if (tickers.has(checkbox.value)) checkbox.checked = true;
           });
           requestRender();
         });
@@ -608,19 +925,18 @@
           checkbox.type = "checkbox";
           checkbox.className = "commodity-checkbox";
           checkbox.value = commodity.ticker;
-          checkbox.dataset.name = commodity.name;
           checkbox.checked = DEFAULT_TICKERS.includes(commodity.ticker);
           checkbox.addEventListener("change", requestRender);
 
-          const text = document.createElement("span");
-          text.textContent = commodity.name;
+          const name = document.createElement("span");
+          name.textContent = commodity.name;
 
           const ticker = document.createElement("span");
           ticker.className = "ticker";
           ticker.textContent = ` (${commodity.ticker})`;
 
-          text.appendChild(ticker);
-          label.append(checkbox, text);
+          name.appendChild(ticker);
+          label.append(checkbox, name);
           list.appendChild(label);
         });
 
@@ -629,53 +945,12 @@
       });
     }
 
-    function getCheckedTickers() {
-      return Array.from(document.querySelectorAll(".commodity-checkbox:checked"))
-        .map((checkbox) => checkbox.value);
-    }
-
     function setCheckedTickers(tickers) {
       const target = new Set(tickers);
+
       document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
         checkbox.checked = target.has(checkbox.value);
       });
-    }
-
-    function getSelectedSeries() {
-      if (!dataset?.series) return [];
-      const selected = new Set(getCheckedTickers());
-      return dataset.series.filter((series) => selected.has(series.ticker));
-    }
-
-    function transformData(series, mode, visibleFrom) {
-      /*
-        The selected range is filtered before data reach the chart.
-        This is more reliable than only moving the visible time scale,
-        especially inside a Notion iframe.
-      */
-      let points = (series.data || [])
-        .map(([time, value]) => ({
-          time,
-          value: Number(value)
-        }))
-        .filter((point) => Number.isFinite(point.value) && point.value > 0);
-
-      if (visibleFrom) {
-        points = points.filter((point) => point.time >= visibleFrom);
-      }
-
-      if (!points.length) return [];
-
-      if (mode === "indexed") {
-        const base = points[0].value;
-
-        return points.map((point) => ({
-          time: point.time,
-          value: (point.value / base) * 100
-        }));
-      }
-
-      return points;
     }
 
     function resetChart() {
@@ -715,7 +990,8 @@
         rightPriceScale: {
           visible: true,
           borderColor: "#cbd5e1",
-          entireTextOnly: true
+          entireTextOnly: true,
+          autoScale: true
         },
         timeScale: {
           borderColor: "#cbd5e1",
@@ -745,6 +1021,7 @@
 
       resizeObserver = new ResizeObserver(() => {
         if (!chart) return;
+
         chart.applyOptions({
           width: Math.max(container.clientWidth, 1),
           height: Math.max(container.clientHeight, 1)
@@ -755,24 +1032,14 @@
       chart.subscribeCrosshairMove(updateTooltip);
     }
 
-    function setPriceScaleMode(mode) {
-      const scaleMode = mode === "log"
-        ? LightweightCharts.PriceScaleMode.Logarithmic
-        : LightweightCharts.PriceScaleMode.Normal;
-
-      chart.applyOptions({
-        rightPriceScale: {
-          mode: scaleMode,
-          autoScale: true
-        }
-      });
-    }
-
-    function addLegend(entry) {
+    function addLegendEntry(entry) {
       const legend = document.getElementById("legend");
 
       const item = document.createElement("span");
       item.className = "legend-item";
+
+      const title = document.createElement("span");
+      title.className = "legend-title";
 
       const swatch = document.createElement("span");
       swatch.className = "legend-swatch";
@@ -781,7 +1048,14 @@
       const name = document.createElement("span");
       name.textContent = entry.name;
 
-      item.append(swatch, name);
+      title.append(swatch, name);
+
+      const price = document.createElement("span");
+      price.className = "legend-price";
+      price.style.color = entry.color;
+      price.textContent = `Aktuell: ${formatActualPrice(entry.latestActualPrice)}`;
+
+      item.append(title, price);
       legend.appendChild(item);
     }
 
@@ -793,7 +1067,7 @@
         return;
       }
 
-      const mode = getScaleMode();
+      const viewMode = getViewMode();
       const rows = [];
 
       seriesEntries.forEach((entry) => {
@@ -806,7 +1080,7 @@
               <span class="tooltip-dot" style="background:${entry.color}"></span>
               ${entry.name}
             </span>
-            <strong>${formatValue(point.value, mode)}</strong>
+            <strong>${formatValue(point.value, viewMode)}</strong>
           </div>
         `);
       });
@@ -820,6 +1094,7 @@
         <div class="tooltip-date">${formatDate(param.time)}</div>
         ${rows.join("")}
       `;
+
       tooltip.style.display = "block";
     }
 
@@ -832,29 +1107,41 @@
       }
 
       const selected = getSelectedSeries();
-      const mode = getScaleMode();
+      const viewMode = getViewMode();
       const chartElement = document.getElementById("chart");
 
-      const allTimes = selected
-        .flatMap((series) => (series.data || []).map(([time]) => time))
-        .sort();
-
-      const latestTime = allTimes.length ? allTimes[allTimes.length - 1] : null;
-      const visibleFrom = getRangeStartDate(latestTime);
+      updateBasisButton();
 
       if (!selected.length) {
         resetChart();
-        chartElement.innerHTML = `<div class="empty-state">Bitte mindestens einen Rohstoff auswählen.</div>`;
+        chartElement.innerHTML = `
+          <div class="empty-state">
+            Bitte mindestens einen Rohstoff auswählen.
+          </div>
+        `;
         setStatus("Keine Zeitreihe ausgewählt.");
         return;
       }
 
+      const latestDate = getLatestDate(selected);
+      const displayStartDate = getDisplayStartDate(latestDate);
+      const basisDate = getBasisTargetDate(
+        selected,
+        latestDate,
+        displayStartDate
+      );
+
       resetChart();
       createChart();
-      setPriceScaleMode(mode);
 
       selected.forEach((series) => {
-        const data = transformData(series, mode, visibleFrom);
+        const data = transformSeriesData(
+          series,
+          viewMode,
+          displayStartDate,
+          basisDate
+        );
+
         if (!data.length) return;
 
         const color = getColor(series.ticker);
@@ -872,42 +1159,62 @@
           title: series.name,
           priceFormat: {
             type: "price",
-            precision: mode === "indexed" ? 2 : 4,
-            minMove: mode === "indexed" ? 0.01 : 0.0001
+            precision: viewMode === "price" ? 4 : 2,
+            minMove: viewMode === "price" ? 0.0001 : 0.01
           }
         });
 
         api.setData(data);
 
-        const entry = { api, name: series.name, color };
+        const entry = {
+          api,
+          name: series.name,
+          color,
+          latestActualPrice: getLatestActualPrice(series)
+        };
+
         seriesEntries.push(entry);
-        addLegend(entry);
+        addLegendEntry(entry);
       });
 
       if (!seriesEntries.length) {
         resetChart();
-        chartElement.innerHTML = `<div class="empty-state">Für die aktuelle Auswahl liegen keine Daten vor.</div>`;
+        chartElement.innerHTML = `
+          <div class="empty-state">
+            Für die aktuelle Auswahl liegen keine Daten vor.
+          </div>
+        `;
         setStatus("Für diese Auswahl liegen keine darstellbaren Daten vor.");
         return;
       }
 
       /*
-        fitContent now fits exactly the data selected by the period button.
-        This guarantees that 1J / 3J / 5J visibly change the chart.
+        The chart now contains only the selected display period.
+        fitContent must therefore show exactly 1J / 3J / ... / Alles.
       */
-      chart.timeScale().fitContent();
+      requestAnimationFrame(() => {
+        if (chart) chart.timeScale().fitContent();
+      });
+
+      const displayedRange = displayStartDate
+        ? `${displayStartDate} bis ${latestDate}`
+        : `erste verfügbare Beobachtung bis ${latestDate}`;
+
+      const basisText = viewMode === "price"
+        ? "keine Indexbasis"
+        : `${getBasisLabel()} (${basisDate || "erste verfügbare Beobachtung"})`;
 
       setStatus(
-        `${seriesEntries.length} Reihen · ${getScaleText(mode)} · ` +
-        `${getRangeLabel()} · tägliche Schlusskurse · ` +
-        `Datenstand: ${formatTimestamp(dataset.generated_at)} · ` +
-        `Prüfung auf neue Daten alle 60 Sekunden.`
+        `${seriesEntries.length} Reihen · ${getViewModeLabel(viewMode)} · ` +
+        `Anzeige: ${displayedRange} · ` +
+        `Indexbasis: ${basisText} · ` +
+        `tägliche Schlusskurse · Datenstand: ${formatTimestamp(dataset.generated_at)}.`
       );
     }
 
     function requestRender() {
       clearTimeout(renderTimer);
-      renderTimer = window.setTimeout(renderChart, 70);
+      renderTimer = window.setTimeout(renderChart, 80);
     }
 
     async function loadData({ silent = false } = {}) {
@@ -915,11 +1222,14 @@
       fetchInProgress = true;
 
       try {
-        const response = await fetch(`data/commodities.json?cache=${Date.now()}`, {
-          cache: "no-store"
-        });
+        const response = await fetch(
+          `data/commodities.json?cache=${Date.now()}`,
+          { cache: "no-store" }
+        );
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
 
         const nextDataset = await response.json();
 
@@ -936,7 +1246,9 @@
 
         dataset = nextDataset;
 
-        if (!silent || oldSignature !== newSignature) renderChart();
+        if (!silent || oldSignature !== newSignature) {
+          renderChart();
+        }
       } catch (error) {
         if (!dataset) {
           resetChart();
@@ -954,16 +1266,54 @@
       }
     }
 
+    function syncDialogWithCurrentChoice() {
+      const selected = document.querySelector(
+        `input[name="basis-choice"][value="${indexBasisKey}"]`
+      );
+
+      if (selected) selected.checked = true;
+
+      document.getElementById("custom-basis-date").value = customBasisDate;
+    }
+
+    function openBasisDialog() {
+      if (getViewMode() === "price") return;
+
+      syncDialogWithCurrentChoice();
+      document.getElementById("basis-dialog").showModal();
+    }
+
+    function applyBasisDialog() {
+      const selected = document.querySelector(
+        'input[name="basis-choice"]:checked'
+      );
+
+      if (!selected) return;
+
+      const nextKey = selected.value;
+      const nextCustomDate = document.getElementById("custom-basis-date").value;
+
+      if (nextKey === "custom" && !nextCustomDate) {
+        setStatus("Bitte für „Eigenes Datum“ ein Datum auswählen.");
+        return;
+      }
+
+      indexBasisKey = nextKey;
+      customBasisDate = nextCustomDate;
+      document.getElementById("basis-dialog").close();
+      requestRender();
+    }
+
     document.querySelectorAll(".period-button").forEach((button) => {
       button.addEventListener("click", () => {
-        currentRangeKey = button.dataset.range;
-        setActiveRangeButton();
+        displayRangeKey = button.dataset.range;
+        updatePeriodButtons();
         requestRender();
       });
     });
 
     document.getElementById("energy-only").addEventListener("click", () => {
-      setCheckedTickers(COMMODITY_GROUPS.Energy.map(item => item.ticker));
+      setCheckedTickers(COMMODITY_GROUPS.Energy.map((item) => item.ticker));
       requestRender();
     });
 
@@ -973,7 +1323,7 @@
     });
 
     document.getElementById("select-all").addEventListener("click", () => {
-      setCheckedTickers(ALL_COMMODITIES.map(item => item.ticker));
+      setCheckedTickers(ALL_COMMODITIES.map((item) => item.ticker));
       requestRender();
     });
 
@@ -982,14 +1332,30 @@
       requestRender();
     });
 
-    document.querySelectorAll('input[name="scale-mode"]').forEach((input) => {
-      input.addEventListener("change", requestRender);
+    document.querySelectorAll('input[name="view-mode"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        updateBasisButton();
+        requestRender();
+      });
     });
 
+    document.getElementById("basis-button").addEventListener("click", openBasisDialog);
+
+    document.getElementById("basis-cancel").addEventListener("click", () => {
+      document.getElementById("basis-dialog").close();
+    });
+
+    document.getElementById("basis-apply").addEventListener("click", applyBasisDialog);
+
     buildControls();
+    updatePeriodButtons();
+    updateBasisButton();
     loadData();
 
-    // The page checks whether the deployed JSON has changed every minute.
+    /*
+      The browser checks every minute whether GitHub Actions has published a
+      newer data/commodities.json file.
+    */
     window.setInterval(() => loadData({ silent: true }), AUTO_REFRESH_MS);
   </script>
 </body>
