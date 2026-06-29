@@ -1,116 +1,547 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
-  <title>Aktienchart</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rohstoff-Chart Vergleich</title>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
   <style>
-    html,
-    body {
-      width: 100%;
-      height: 100%;
+    html, body {
       margin: 0;
       padding: 0;
-      overflow: hidden;
-      background: #ffffff;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-
-    .tradingview-widget-container,
-    .tradingview-widget-container__widget {
       width: 100%;
       height: 100%;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #ffffff;
+      color: #111;
+    }
+
+    .page {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+    }
+
+    .controls {
+      padding: 12px 14px 10px 14px;
+      border-bottom: 1px solid #e5e5e5;
+      background: #fafafa;
+      overflow-y: auto;
+      max-height: 42%;
+      box-sizing: border-box;
+    }
+
+    .top-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .top-row label {
+      font-size: 14px;
+    }
+
+    select, button {
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #cfcfcf;
+      background: #fff;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #f2f2f2;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    details {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .group-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 6px 12px;
+    }
+
+    .group-grid label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .chart-wrap {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+
+    #chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    .status {
+      font-size: 13px;
+      color: #555;
+      margin-top: 4px;
     }
   </style>
 </head>
-
 <body>
-  <div class="tradingview-widget-container">
-    <div
-      id="tradingview-chart"
-      class="tradingview-widget-container__widget"
-    ></div>
+  <div class="page">
+    <div class="controls">
+      <div class="top-row">
+        <label>
+          Zeitraum:
+          <select id="range-select">
+            <option value="1y">1 Jahr</option>
+            <option value="3y">3 Jahre</option>
+            <option value="5y" selected>5 Jahre</option>
+            <option value="10y">10 Jahre</option>
+            <option value="max">Max</option>
+          </select>
+        </label>
+
+        <label>
+          <input type="checkbox" id="log-scale" checked />
+          Logarithmische Skala
+        </label>
+
+        <label>
+          <input type="checkbox" id="normalize-scale" />
+          Auf 100 normieren
+        </label>
+      </div>
+
+      <div class="button-row">
+        <button type="button" id="select-default">Standard-Auswahl</button>
+        <button type="button" id="select-all">Alle auswählen</button>
+        <button type="button" id="clear-all">Alle abwählen</button>
+        <button type="button" id="update-chart">Diagramm aktualisieren</button>
+      </div>
+
+      <div id="groups-container"></div>
+      <div class="status" id="status">Bereit.</div>
+    </div>
+
+    <div class="chart-wrap">
+      <div id="chart"></div>
+    </div>
   </div>
 
   <script>
-    /*
-      Symbol aus der URL auslesen.
+    const COMMODITY_GROUPS = {
+      "Energy": {
+        "CL=F": "WTI Crude",
+        "BZ=F": "Brent Crude",
+        "NG=F": "Natural Gas",
+        "RB=F": "RBOB Gasoline",
+        "HO=F": "Heating Oil"
+      },
+      "Metals": {
+        "GC=F": "Gold",
+        "SI=F": "Silver",
+        "HG=F": "Copper",
+        "PL=F": "Platinum",
+        "PA=F": "Palladium"
+      },
+      "Grains / Oilseeds": {
+        "ZC=F": "Corn",
+        "ZW=F": "Wheat",
+        "ZS=F": "Soybeans",
+        "ZL=F": "Soybean Oil",
+        "ZM=F": "Soybean Meal"
+      },
+      "Softs": {
+        "KC=F": "Coffee",
+        "SB=F": "Sugar",
+        "CC=F": "Cocoa",
+        "CT=F": "Cotton",
+        "OJ=F": "Orange Juice"
+      },
+      "Livestock": {
+        "LE=F": "Live Cattle",
+        "HE=F": "Lean Hogs"
+      }
+    };
 
-      Beispiele:
-      ?symbol=NASDAQ%3AAAPL  → Apple
-      ?symbol=XETR%3ASAP     → SAP
-      ?symbol=NYSE%3AXOM     → ExxonMobil
+    const ALL_SYMBOLS = Object.entries(COMMODITY_GROUPS).flatMap(([group, items]) =>
+      Object.entries(items).map(([symbol, name]) => ({
+        group,
+        symbol,
+        name
+      }))
+    );
 
-      Ohne Symbol wird Apple geladen.
-    */
-    const urlParameters = new URLSearchParams(window.location.search);
+    const NAME_BY_SYMBOL = Object.fromEntries(
+      ALL_SYMBOLS.map(item => [item.symbol, item.name])
+    );
 
-    const symbolFromUrl =
-      urlParameters.get("symbol") || "NASDAQ:AAPL";
+    const DEFAULT_SELECTION = [
+      "CL=F",
+      "BZ=F",
+      "NG=F",
+      "GC=F",
+      "SI=F",
+      "HG=F",
+      "ZC=F",
+      "ZW=F",
+      "KC=F",
+      "CC=F"
+    ];
 
-    const symbol = symbolFromUrl.trim().toUpperCase();
+    function buildGroups() {
+      const container = document.getElementById("groups-container");
+      container.innerHTML = "";
 
-    document.title = symbol + " – Aktienchart";
+      Object.entries(COMMODITY_GROUPS).forEach(([groupName, items], index) => {
+        const details = document.createElement("details");
+        if (index < 2) details.open = true;
 
-    /*
-      TradingView-Widget dynamisch erzeugen.
-      Die obere Leiste bleibt sichtbar, damit dort die
-      TradingView-Suche mit Vorschlägen genutzt werden kann.
-    */
-    const widgetContainer = document.getElementById("tradingview-chart");
+        const summary = document.createElement("summary");
+        summary.textContent = groupName;
+        details.appendChild(summary);
 
-    const tradingViewScript = document.createElement("script");
+        const grid = document.createElement("div");
+        grid.className = "group-grid";
 
-    tradingViewScript.type = "text/javascript";
-    tradingViewScript.src =
-      "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+        Object.entries(items).forEach(([symbol, name]) => {
+          const label = document.createElement("label");
 
-    tradingViewScript.async = true;
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "commodity-checkbox";
+          checkbox.value = symbol;
 
-    tradingViewScript.text = JSON.stringify({
-      autosize: true,
+          if (DEFAULT_SELECTION.includes(symbol)) {
+            checkbox.checked = true;
+          }
 
-      symbol: symbol,
-      interval: "D",
-      timezone: "Europe/Berlin",
-      theme: "light",
-      style: "3",
-      locale: "de_DE",
+          const span = document.createElement("span");
+          span.textContent = `${name} (${symbol})`;
 
-      /*
-        Die obere Leiste bleibt an:
-        Dort klickst du auf den Ticker und kannst nach
-        Unternehmen oder Symbolen suchen.
-      */
-      hide_top_toolbar: false,
-      allow_symbol_change: true,
+          label.appendChild(checkbox);
+          label.appendChild(span);
+          grid.appendChild(label);
+        });
 
-      /*
-        Alles andere möglichst schlank halten.
-      */
-      hide_side_toolbar: true,
-      hide_legend: true,
-      hide_volume: true,
-      withdateranges: false,
+        details.appendChild(grid);
+        container.appendChild(details);
+      });
+    }
 
-      save_image: false,
-      calendar: false,
-      details: false,
-      hotlist: false,
-      watchlist: [],
+    function getSelectedSymbols() {
+      return Array.from(document.querySelectorAll(".commodity-checkbox:checked"))
+        .map(cb => cb.value);
+    }
 
-      backgroundColor: "rgba(255, 255, 255, 1)",
-      gridColor: "rgba(46, 46, 46, 0.06)",
+    function setSelectedSymbols(symbols) {
+      const wanted = new Set(symbols);
+      document.querySelectorAll(".commodity-checkbox").forEach(cb => {
+        cb.checked = wanted.has(cb.value);
+      });
+    }
 
-      studies: [],
-      support_host: "https://www.tradingview.com"
+    function setStatus(text) {
+      document.getElementById("status").textContent = text;
+    }
+
+    function firstValidValue(arr) {
+      for (const value of arr) {
+        if (value !== null && value !== undefined && Number.isFinite(value)) {
+          return value;
+        }
+      }
+      return null;
+    }
+
+    async function fetchYahooSeries(symbol, range = "5y") {
+      const urls = [
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d&includePrePost=false&events=div%2Csplits`,
+        `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d&includePrePost=false&events=div%2Csplits`
+      ];
+
+      let lastError = null;
+
+      for (const url of urls) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          const result = data?.chart?.result?.[0];
+
+          if (!result) {
+            throw new Error("Keine Daten erhalten");
+          }
+
+          const timestamps = result.timestamp || [];
+          const closes = result.indicators?.quote?.[0]?.close || [];
+
+          const x = [];
+          const y = [];
+
+          for (let i = 0; i < timestamps.length; i++) {
+            const close = closes[i];
+            if (close === null || close === undefined || !Number.isFinite(close)) {
+              continue;
+            }
+
+            x.push(new Date(timestamps[i] * 1000));
+            y.push(close);
+          }
+
+          if (x.length === 0) {
+            throw new Error("Leere Zeitreihe");
+          }
+
+          return { symbol, name: NAME_BY_SYMBOL[symbol] || symbol, x, y };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      throw lastError || new Error(`Daten für ${symbol} konnten nicht geladen werden`);
+    }
+
+    function seriesToTrace(series, normalize = false) {
+      let yValues = [...series.y];
+
+      if (normalize) {
+        const base = firstValidValue(yValues);
+        if (base && base !== 0) {
+          yValues = yValues.map(v => (v / base) * 100);
+        }
+      }
+
+      return {
+        x: series.x,
+        y: yValues,
+        mode: "lines",
+        type: "scatter",
+        name: series.name,
+        hovertemplate: "%{x|%d.%m.%Y}<br>%{y:.2f}<extra>" + series.name + "</extra>",
+        line: {
+          width: 2
+        }
+      };
+    }
+
+    function updateUrlState(selectedSymbols, range, logScale, normalizeScale) {
+      const params = new URLSearchParams();
+
+      if (selectedSymbols.length > 0) {
+        params.set("symbols", selectedSymbols.join(","));
+      }
+      params.set("range", range);
+      params.set("log", logScale ? "1" : "0");
+      params.set("norm", normalizeScale ? "1" : "0");
+
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      history.replaceState({}, "", newUrl);
+    }
+
+    function loadStateFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+
+      const symbolsParam = params.get("symbols");
+      const rangeParam = params.get("range");
+      const logParam = params.get("log");
+      const normParam = params.get("norm");
+
+      if (symbolsParam) {
+        const symbols = symbolsParam
+          .split(",")
+          .map(s => s.trim())
+          .filter(Boolean);
+        setSelectedSymbols(symbols);
+      }
+
+      if (rangeParam) {
+        const select = document.getElementById("range-select");
+        if (Array.from(select.options).some(opt => opt.value === rangeParam)) {
+          select.value = rangeParam;
+        }
+      }
+
+      if (logParam === "0") {
+        document.getElementById("log-scale").checked = false;
+      }
+
+      if (normParam === "1") {
+        document.getElementById("normalize-scale").checked = true;
+      }
+    }
+
+    async function renderChart() {
+      const selectedSymbols = getSelectedSymbols();
+      const range = document.getElementById("range-select").value;
+      const logScale = document.getElementById("log-scale").checked;
+      const normalizeScale = document.getElementById("normalize-scale").checked;
+
+      updateUrlState(selectedSymbols, range, logScale, normalizeScale);
+
+      if (selectedSymbols.length === 0) {
+        setStatus("Bitte mindestens einen Rohstoff auswählen.");
+        Plotly.react("chart", [], {
+          margin: { l: 55, r: 20, t: 30, b: 40 },
+          annotations: [{
+            text: "Bitte mindestens einen Rohstoff auswählen.",
+            showarrow: false,
+            x: 0.5,
+            y: 0.5,
+            xref: "paper",
+            yref: "paper",
+            font: { size: 16 }
+          }]
+        }, { responsive: true });
+        return;
+      }
+
+      setStatus("Daten werden geladen ...");
+
+      try {
+        const results = await Promise.allSettled(
+          selectedSymbols.map(symbol => fetchYahooSeries(symbol, range))
+        );
+
+        const successful = results
+          .filter(r => r.status === "fulfilled")
+          .map(r => r.value);
+
+        const failed = results
+          .filter(r => r.status === "rejected")
+          .map(r => r.reason?.message || "Unbekannter Fehler");
+
+        if (successful.length === 0) {
+          throw new Error("Keine Zeitreihen konnten geladen werden.");
+        }
+
+        const traces = successful.map(series => seriesToTrace(series, normalizeScale));
+
+        const layout = {
+          title: {
+            text: normalizeScale
+              ? "Rohstoffe im Vergleich (Start = 100)"
+              : "Rohstoffe im Vergleich",
+            x: 0.02,
+            xanchor: "left"
+          },
+          margin: { l: 65, r: 20, t: 50, b: 45 },
+          paper_bgcolor: "#ffffff",
+          plot_bgcolor: "#ffffff",
+          hovermode: "x unified",
+          legend: {
+            orientation: "h",
+            yanchor: "bottom",
+            y: 1.02,
+            xanchor: "left",
+            x: 0
+          },
+          xaxis: {
+            title: "",
+            showgrid: true,
+            gridcolor: "rgba(0,0,0,0.06)",
+            zeroline: false,
+            rangeslider: { visible: false }
+          },
+          yaxis: {
+            title: normalizeScale ? "Index (Start = 100)" : "Preis",
+            type: logScale ? "log" : "linear",
+            showgrid: true,
+            gridcolor: "rgba(0,0,0,0.06)",
+            zeroline: false
+          }
+        };
+
+        const config = {
+          responsive: true,
+          displaylogo: false
+        };
+
+        await Plotly.react("chart", traces, layout, config);
+
+        let statusText = `${successful.length} Zeitreihen geladen.`;
+        if (failed.length > 0) {
+          statusText += ` ${failed.length} konnten nicht geladen werden.`;
+        }
+        setStatus(statusText);
+
+      } catch (error) {
+        setStatus("Fehler beim Laden der Daten.");
+        Plotly.react("chart", [], {
+          margin: { l: 55, r: 20, t: 30, b: 40 },
+          annotations: [{
+            text: "Fehler beim Laden der Daten: " + error.message,
+            showarrow: false,
+            x: 0.5,
+            y: 0.5,
+            xref: "paper",
+            yref: "paper",
+            font: { size: 15 }
+          }]
+        }, { responsive: true });
+      }
+    }
+
+    document.getElementById("select-default").addEventListener("click", () => {
+      setSelectedSymbols(DEFAULT_SELECTION);
+      renderChart();
     });
 
-    widgetContainer.appendChild(tradingViewScript);
+    document.getElementById("select-all").addEventListener("click", () => {
+      setSelectedSymbols(ALL_SYMBOLS.map(item => item.symbol));
+      renderChart();
+    });
+
+    document.getElementById("clear-all").addEventListener("click", () => {
+      setSelectedSymbols([]);
+      renderChart();
+    });
+
+    document.getElementById("update-chart").addEventListener("click", () => {
+      renderChart();
+    });
+
+    document.getElementById("range-select").addEventListener("change", renderChart);
+    document.getElementById("log-scale").addEventListener("change", renderChart);
+    document.getElementById("normalize-scale").addEventListener("change", renderChart);
+
+    buildGroups();
+    loadStateFromUrl();
+    renderChart();
   </script>
 </body>
 </html>
