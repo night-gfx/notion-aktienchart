@@ -890,7 +890,7 @@
       */
       return {
         from: Math.max(-0.5, firstVisibleIndex - 0.5),
-        to: timeline.length - 1 + 2
+        to: timeline.length + 0.5
       };
     }
 
@@ -1088,37 +1088,9 @@
       });
 
       resizeObserver.observe(container);
-      chart.subscribeCrosshairMove(updateTooltip);
     }
 
-    function addLegendEntry(entry) {
-      const legend = document.getElementById("legend");
-
-      const item = document.createElement("span");
-      item.className = "legend-item";
-
-      const title = document.createElement("span");
-      title.className = "legend-title";
-
-      const swatch = document.createElement("span");
-      swatch.className = "legend-swatch";
-      swatch.style.background = entry.color;
-
-      const name = document.createElement("span");
-      name.textContent = entry.name;
-
-      title.append(swatch, name);
-
-      const price = document.createElement("span");
-      price.className = "legend-price";
-      price.style.color = entry.color;
-      price.textContent = `Aktuell: ${formatActualPrice(entry.latestActualPrice)}`;
-
-      item.append(title, price);
-      legend.appendChild(item);
-    }
-
-    function updateTooltip(param) {
+    function syncTooltip(param) {
       const tooltip = document.getElementById("tooltip");
 
       if (!param?.time || !param?.point || param.point.x < 0 || param.point.y < 0) {
@@ -1206,36 +1178,19 @@
         if (!data.length) return;
 
         const color = getColor(series.ticker);
-
-        const api = chart.addSeries(LightweightCharts.LineSeries, {
-          color,
-          lineWidth: 2,
-          lineType: LightweightCharts.LineType.Simple,
-          crosshairMarkerVisible: true,
-          crosshairMarkerRadius: 4,
-          crosshairMarkerBorderColor: color,
-          crosshairMarkerBackgroundColor: "#ffffff",
-          lastValueVisible: false,
-          priceLineVisible: false,
-          title: series.name,
-          priceFormat: {
-            type: "price",
-            precision: viewMode === "price" ? 4 : 2,
-            minMove: viewMode === "price" ? 0.0001 : 0.01
-          }
+        const api = chart.addLineSeries({
+          color: color,
+          title: series.ticker
         });
 
         api.setData(data);
 
-        const entry = {
+        seriesEntries.push({
           api,
           name: series.name,
-          color,
-          latestActualPrice: getLatestActualPrice(series)
-        };
-
-        seriesEntries.push(entry);
-        addLegendEntry(entry);
+          ticker: series.ticker,
+          color
+        });
       });
 
       if (!seriesEntries.length) {
@@ -1267,151 +1222,129 @@
         `${seriesEntries.length} Reihen · ${getViewModeLabel(viewMode)} · ` +
         `Anzeige: ${displayedRange} · ` +
         `X-Achse: ${logicalRange ? "Zeitfenster gesetzt" : "gesamte Historie"} · ` +
-        `Indexbasis: ${basisText} · ` +
-        `tägliche Schlusskurse · Datenstand: ${formatTimestamp(dataset.generated_at)}.`
+        `Basis: ${basisText}`
       );
+
+      if (chart) {
+        chart.subscribeCrosshairMove(syncTooltip);
+      }
+
+      const legend = document.getElementById("legend");
+      legend.innerHTML = seriesEntries
+        .map((entry) => {
+          const price = getLatestActualPrice(
+            dataset.series.find((s) => s.ticker === entry.ticker)
+          );
+
+          return `
+            <div class="legend-item">
+              <div class="legend-title">
+                <span class="legend-swatch" style="background: ${entry.color}"></span>
+                <span>${entry.ticker}</span>
+              </div>
+              <div class="legend-price">${formatActualPrice(price)}</div>
+            </div>
+          `;
+        })
+        .join("");
     }
 
     function requestRender() {
-      clearTimeout(renderTimer);
-      renderTimer = window.setTimeout(renderChart, 80);
+      if (renderTimer) clearTimeout(renderTimer);
+      renderTimer = window.setTimeout(renderChart, 100);
     }
 
-    async function loadData({ silent = false } = {}) {
-      if (fetchInProgress) return;
-      fetchInProgress = true;
+    function onPeriodButtonClick(event) {
+      displayRangeKey = event.target.dataset.range;
+      updatePeriodButtons();
+      requestRender();
+    }
 
-      try {
-        const response = await fetch(
-          `data/commodities.json?cache=${Date.now()}`,
-          { cache: "no-store" }
+    function onViewModeChange() {
+      requestRender();
+    }
+
+    function setupEventListeners() {
+      document.getElementById("default-selection").addEventListener("click", () => {
+        setCheckedTickers(DEFAULT_TICKERS);
+        requestRender();
+      });
+
+      document.getElementById("select-all").addEventListener("click", () => {
+        setCheckedTickers(ALL_COMMODITIES.map((c) => c.ticker));
+        requestRender();
+      });
+
+      document.getElementById("clear-all").addEventListener("click", () => {
+        setCheckedTickers([]);
+        requestRender();
+      });
+
+      document.querySelectorAll(".period-button").forEach((button) => {
+        button.addEventListener("click", onPeriodButtonClick);
+      });
+
+      document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
+        radio.addEventListener("change", onViewModeChange);
+      });
+
+      document.getElementById("basis-button").addEventListener("click", () => {
+        const dialog = document.getElementById("basis-dialog");
+
+        const basisOptions = dialog.querySelectorAll('input[name="basis-choice"]');
+        basisOptions.forEach((option) => {
+          option.checked = option.value === indexBasisKey;
+        });
+
+        const customDateInput = document.getElementById("custom-basis-date");
+        customDateInput.value = customBasisDate;
+
+        dialog.showModal();
+      });
+
+      document.getElementById("basis-cancel").addEventListener("click", () => {
+        document.getElementById("basis-dialog").close();
+      });
+
+      document.getElementById("basis-apply").addEventListener("click", () => {
+        const selected = document.querySelector(
+          '#basis-dialog input[name="basis-choice"]:checked'
         );
+        if (selected) {
+          indexBasisKey = selected.value;
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          if (indexBasisKey === "custom") {
+            customBasisDate = document.getElementById("custom-basis-date").value;
+          }
+
+          requestRender();
         }
 
-        const nextDataset = await response.json();
+        document.getElementById("basis-dialog").close();
+      });
+    }
 
-        if (!Array.isArray(nextDataset.series) || !nextDataset.series.length) {
-          throw new Error("Die Datendatei enthält noch keine Zeitreihen.");
-        }
+    async function fetchData() {
+      try {
+        const response = await fetch("./data/commodities.json");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        const oldSignature = dataset
-          ? `${dataset.generated_at}|${dataset.series.length}`
-          : "";
+        dataset = await response.json();
+        buildControls();
+        requestRender();
 
-        const newSignature =
-          `${nextDataset.generated_at}|${nextDataset.series.length}`;
-
-        dataset = nextDataset;
-
-        if (!silent || oldSignature !== newSignature) {
-          renderChart();
-        }
+        setInterval(() => {
+          if (!fetchInProgress) fetchData();
+        }, AUTO_REFRESH_MS);
       } catch (error) {
-        if (!dataset) {
-          resetChart();
-          document.getElementById("chart").innerHTML = `
-            <div class="empty-state">
-              Noch keine Daten verfügbar. Starte einmal den GitHub-Workflow
-              <b>Update data and deploy dashboard</b> im Tab <b>Actions</b>.
-            </div>
-          `;
-        }
-
-        setStatus(`Daten konnten nicht geladen werden: ${error.message}`);
-      } finally {
-        fetchInProgress = false;
+        console.error("Failed to fetch data:", error);
+        setStatus(`Fehler beim Abrufen der Daten: ${error.message}`);
       }
     }
-
-    function syncDialogWithCurrentChoice() {
-      const selected = document.querySelector(
-        `input[name="basis-choice"][value="${indexBasisKey}"]`
-      );
-
-      if (selected) selected.checked = true;
-
-      document.getElementById("custom-basis-date").value = customBasisDate;
-    }
-
-    function openBasisDialog() {
-      if (getViewMode() === "price") return;
-
-      syncDialogWithCurrentChoice();
-      document.getElementById("basis-dialog").showModal();
-    }
-
-    function applyBasisDialog() {
-      const selected = document.querySelector(
-        'input[name="basis-choice"]:checked'
-      );
-
-      if (!selected) return;
-
-      const nextKey = selected.value;
-      const nextCustomDate = document.getElementById("custom-basis-date").value;
-
-      if (nextKey === "custom" && !nextCustomDate) {
-        setStatus("Bitte für „Eigenes Datum“ ein Datum auswählen.");
-        return;
-      }
-
-      indexBasisKey = nextKey;
-      customBasisDate = nextCustomDate;
-      document.getElementById("basis-dialog").close();
-      requestRender();
-    }
-
-    document.querySelectorAll(".period-button").forEach((button) => {
-      button.addEventListener("click", () => {
-        displayRangeKey = button.dataset.range;
-        updatePeriodButtons();
-        requestRender();
-      });
-    });
-
-    document.getElementById("default-selection").addEventListener("click", () => {
-      setCheckedTickers(DEFAULT_TICKERS);
-      requestRender();
-    });
-
-    document.getElementById("select-all").addEventListener("click", () => {
-      setCheckedTickers(ALL_COMMODITIES.map((item) => item.ticker));
-      requestRender();
-    });
-
-    document.getElementById("clear-all").addEventListener("click", () => {
-      setCheckedTickers([]);
-      requestRender();
-    });
-
-    document.querySelectorAll('input[name="view-mode"]').forEach((input) => {
-      input.addEventListener("change", () => {
-        updateBasisButton();
-        requestRender();
-      });
-    });
-
-    document.getElementById("basis-button").addEventListener("click", openBasisDialog);
-
-    document.getElementById("basis-cancel").addEventListener("click", () => {
-      document.getElementById("basis-dialog").close();
-    });
-
-    document.getElementById("basis-apply").addEventListener("click", applyBasisDialog);
 
     buildControls();
-    updatePeriodButtons();
-    updateBasisButton();
-    loadData();
-
-    /*
-      The browser checks every minute whether GitHub Actions has published a
-      newer data/commodities.json file.
-    */
-    window.setInterval(() => loadData({ silent: true }), AUTO_REFRESH_MS);
+    setupEventListeners();
+    fetchData();
   </script>
 </body>
 </html>
