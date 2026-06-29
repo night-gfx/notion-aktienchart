@@ -482,33 +482,8 @@
 
       <div class="basis-options">
         <label class="basis-option">
-          <input type="radio" name="basis-choice" value="display-start">
+          <input type="radio" name="basis-choice" value="display-start" checked>
           Beginn des Anzeigezeitraums
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="1y">
-          1 Jahr vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="3y">
-          3 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="5y">
-          5 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="10y">
-          10 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="20y">
-          20 Jahre vor dem letzten verfügbaren Kurs
         </label>
 
         <label class="basis-option">
@@ -533,9 +508,11 @@
   <script>
     /*
       Data source:
-      The page reads daily prices from data/commodities.json.
-      GitHub Actions writes this file from Yahoo Finance.
-      No request is sent from the browser directly to Yahoo Finance.
+      The page reads transformed data from data/commodities_transformed.json.
+      This file is created by transform_series.py after download.
+      - data: original prices
+      - indexed: (price / first_price) × 100
+      - log_return: 100 × ln(price / first_price)
     */
 
     const COMMODITY_GROUPS = {
@@ -607,13 +584,7 @@
     let fetchInProgress = false;
     let renderTimer = null;
 
-    /*
-      State 1: Which dates are displayed on the x-axis.
-      State 2: Which date is used as base for Index 100 / Log-Performance.
-      These are intentionally separate.
-    */
     let displayRangeKey = "all";
-    let indexBasisKey = "display-start";
     let customBasisDate = "";
 
     function getColor(ticker) {
@@ -644,35 +615,11 @@
         "20y": "letzte 20 Jahre",
         "all": "gesamte Historie"
       };
-
       return labels[displayRangeKey] || "gesamte Historie";
     }
 
     function getBasisLabel() {
-      const labels = {
-        "display-start": "Anzeige-Start",
-        "1y": "1 Jahr zurück",
-        "3y": "3 Jahre zurück",
-        "5y": "5 Jahre zurück",
-        "10y": "10 Jahre zurück",
-        "20y": "20 Jahre zurück",
-        "first-common": "erste gemeinsame Beobachtung",
-        "custom": customBasisDate ? customBasisDate : "eigenes Datum"
-      };
-
-      return labels[indexBasisKey] || "Anzeige-Start";
-    }
-
-    function formatTimestamp(timestamp) {
-      if (!timestamp) return "unbekannt";
-
-      const date = new Date(timestamp);
-      if (Number.isNaN(date.valueOf())) return timestamp;
-
-      return new Intl.DateTimeFormat("de-DE", {
-        dateStyle: "medium",
-        timeStyle: "short"
-      }).format(date);
+      return customBasisDate ? customBasisDate : "Beginn des Anzeigezeitraums";
     }
 
     function formatDate(time) {
@@ -680,42 +627,20 @@
         return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" })
           .format(new Date(`${time}T12:00:00Z`));
       }
-
-      if (time && typeof time === "object" && "year" in time) {
-        return `${String(time.day).padStart(2, "0")}.${String(time.month).padStart(2, "0")}.${time.year}`;
-      }
-
       return "";
     }
 
     function formatValue(value, viewMode) {
       if (!Number.isFinite(value)) return "–";
-
-      if (viewMode === "indexed") {
-        return value.toLocaleString("de-DE", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        });
-      }
-
-      if (viewMode === "log-return") {
-        return value.toLocaleString("de-DE", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        });
-      }
-
       return value.toLocaleString("de-DE", {
-        maximumSignificantDigits: 7
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
       });
     }
 
     function formatActualPrice(value) {
       if (!Number.isFinite(value)) return "–";
-
-      return value.toLocaleString("de-DE", {
-        maximumSignificantDigits: 7
-      });
+      return value.toLocaleString("de-DE", { maximumSignificantDigits: 7 });
     }
 
     function subtractYears(dateString, years) {
@@ -736,7 +661,6 @@
     function updateBasisButton() {
       const button = document.getElementById("basis-button");
       const isPriceMode = getViewMode() === "price";
-
       button.disabled = isPriceMode;
       button.textContent = isPriceMode
         ? "Indexbasis: nur bei Index / Log"
@@ -745,128 +669,63 @@
 
     function getSelectedSeries() {
       if (!dataset?.series) return [];
-
       const selectedTickers = new Set(
         Array.from(document.querySelectorAll(".commodity-checkbox:checked"))
           .map((checkbox) => checkbox.value)
       );
-
       return dataset.series.filter((series) => selectedTickers.has(series.ticker));
     }
 
-    function getSeriesPoints(series) {
-      return (series.data || [])
+    function getSeriesPoints(series, viewMode) {
+      // Load precomputed data based on view mode
+      let dataArray = series.data || [];
+      
+      if (viewMode === "indexed") {
+        dataArray = series.indexed || [];
+      } else if (viewMode === "log-return") {
+        dataArray = series.log_return || [];
+      }
+
+      return dataArray
         .map(([time, value]) => ({
           time,
           value: Number(value)
         }))
-        .filter((point) => Number.isFinite(point.value) && point.value > 0)
+        .filter((point) => Number.isFinite(point.value))
         .sort((a, b) => a.time.localeCompare(b.time));
     }
 
-    function getLatestDate(selectedSeries) {
+    function getLatestDate(selectedSeries, viewMode) {
       const dates = selectedSeries
         .map((series) => {
-          const points = getSeriesPoints(series);
+          const points = getSeriesPoints(series, viewMode);
           return points.length ? points[points.length - 1].time : null;
         })
         .filter(Boolean)
         .sort();
-
       return dates.length ? dates[dates.length - 1] : null;
     }
 
     function getDisplayStartDate(latestDate) {
       if (!latestDate || displayRangeKey === "all") return null;
-
-      return subtractYears(
-        latestDate,
-        Number.parseInt(displayRangeKey, 10)
-      );
+      return subtractYears(latestDate, Number.parseInt(displayRangeKey, 10));
     }
 
-    function getFirstCommonDate(selectedSeries) {
+    function getFirstCommonDate(selectedSeries, viewMode) {
       const firstDates = selectedSeries
         .map((series) => {
-          const points = getSeriesPoints(series);
+          const points = getSeriesPoints(series, viewMode);
           return points.length ? points[0].time : null;
         })
         .filter(Boolean)
         .sort();
-
-      /*
-        The latest first date is the first point at which all selected
-        series can potentially be observed.
-      */
       return firstDates.length ? firstDates[firstDates.length - 1] : null;
     }
 
-    function getBasisTargetDate(selectedSeries, latestDate, displayStartDate) {
-      if (indexBasisKey === "display-start") {
-        return displayStartDate || getFirstCommonDate(selectedSeries);
-      }
-
-      if (indexBasisKey === "first-common") {
-        return getFirstCommonDate(selectedSeries);
-      }
-
-      if (indexBasisKey === "custom") {
-        return customBasisDate || displayStartDate || getFirstCommonDate(selectedSeries);
-      }
-
-      const years = Number.parseInt(indexBasisKey, 10);
-      if (Number.isFinite(years) && latestDate) {
-        return subtractYears(latestDate, years);
-      }
-
-      return displayStartDate || getFirstCommonDate(selectedSeries);
-    }
-
-    function findBasePoint(points, targetDate) {
-      if (!points.length) return null;
-
-      if (!targetDate) return points[0];
-
-      return points.find((point) => point.time >= targetDate) || points[0];
-    }
-
-    function transformSeriesData(series, viewMode, basisDate) {
-      /*
-        Every data point stays in the chart. The selected display period is
-        applied later to the time scale as a logical viewport, not by removing
-        observations. Therefore the user can still drag left afterwards.
-      */
-      const allPoints = getSeriesPoints(series);
-      if (!allPoints.length) return [];
-
-      const basePoint = findBasePoint(allPoints, basisDate);
-      if (!basePoint) return [];
-
-      if (viewMode === "price") {
-        return allPoints;
-      }
-
-      if (viewMode === "indexed") {
-        return allPoints.map((point) => ({
-          time: point.time,
-          value: (point.value / basePoint.value) * 100
-        }));
-      }
-
-      /*
-        Log-performance (not a logarithmic original-price axis):
-        100 × ln(P_t / P_base)
-      */
-      return allPoints.map((point) => ({
-        time: point.time,
-        value: 100 * Math.log(point.value / basePoint.value)
-      }));
-    }
-
-    function getTimeline(selectedSeries) {
+    function getTimeline(selectedSeries, viewMode) {
       return [...new Set(
         selectedSeries.flatMap((series) =>
-          getSeriesPoints(series).map((point) => point.time)
+          getSeriesPoints(series, viewMode).map((point) => point.time)
         )
       )].sort();
     }
@@ -875,19 +734,12 @@
       if (!timeline.length || !displayStartDate) {
         return null;
       }
-
       const firstVisibleIndex = timeline.findIndex(
         (time) => time >= displayStartDate
       );
-
       if (firstVisibleIndex === -1) {
         return null;
       }
-
-      /*
-        Logical indices belong to the combined time scale, not to one
-        individual commodity series. A small margin preserves readability.
-      */
       return {
         from: Math.max(-0.5, firstVisibleIndex - 0.5),
         to: timeline.length + 0.5
@@ -896,22 +748,14 @@
 
     function applyDisplayViewport(logicalRange) {
       if (!chart) return;
-
       const apply = () => {
         if (!chart) return;
-
         if (logicalRange) {
           chart.timeScale().setVisibleLogicalRange(logicalRange);
         } else {
           chart.timeScale().fitContent();
         }
       };
-
-      /*
-        A GitHub Pages / Notion iframe can receive its final dimensions only
-        after the first paint. Applying twice after layout prevents fitContent
-        or resizing from overriding the selected view.
-      */
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           apply();
@@ -921,7 +765,7 @@
     }
 
     function getLatestActualPrice(series) {
-      const points = getSeriesPoints(series);
+      const points = getSeriesPoints(series, "price");
       return points.length ? points[points.length - 1].value : NaN;
     }
 
@@ -955,7 +799,6 @@
         addButton.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-
           const tickers = new Set(commodities.map((item) => item.ticker));
           document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
             if (tickers.has(checkbox.value)) checkbox.checked = true;
@@ -998,134 +841,57 @@
     }
 
     function setCheckedTickers(tickers) {
-      const target = new Set(tickers);
-
       document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
-        checkbox.checked = target.has(checkbox.value);
+        checkbox.checked = tickers.includes(checkbox.value);
       });
     }
 
     function resetChart() {
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-        resizeObserver = null;
-      }
-
-      if (chart) {
-        chart.remove();
-        chart = null;
-      }
-
+      if (chart) chart.remove();
+      chart = null;
       seriesEntries = [];
-      document.getElementById("chart").innerHTML = "";
-      document.getElementById("legend").innerHTML = "";
-      document.getElementById("tooltip").style.display = "none";
     }
 
     function createChart() {
-      const container = document.getElementById("chart");
-
-      chart = LightweightCharts.createChart(container, {
-        width: Math.max(container.clientWidth, 1),
-        height: Math.max(container.clientHeight, 1),
-        layout: {
-          background: { type: "solid", color: "#ffffff" },
-          textColor: "#475569",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 12
-        },
-        grid: {
-          vertLines: { visible: false },
-          horzLines: { visible: false }
-        },
-        leftPriceScale: { visible: false },
-        rightPriceScale: {
-          visible: true,
-          borderColor: "#cbd5e1",
-          entireTextOnly: true,
-          autoScale: true
-        },
-        timeScale: {
-          borderColor: "#cbd5e1",
-          timeVisible: false,
-          secondsVisible: false,
-        
-          rightOffset: 2,
-        
-          /*
-            Wichtig für tägliche Daten über viele Jahre:
-            Der Abstand darf sehr klein werden, damit 10–40 Jahre
-            auf einmal dargestellt werden können.
-          */
-          barSpacing: 1.2,
-          minBarSpacing: 0.05
-        },
-        crosshair: {
-          vertLine: {
-            color: "rgba(30, 41, 59, 0.45)",
-            width: 1,
-            style: LightweightCharts.LineStyle.Dashed,
-            labelBackgroundColor: "#475569"
-          },
-          horzLine: {
-            color: "rgba(30, 41, 59, 0.30)",
-            width: 1,
-            style: LightweightCharts.LineStyle.Dashed,
-            labelBackgroundColor: "#475569"
-          }
-        },
-        handleScroll: true,
-        handleScale: true
+      const chartElement = document.getElementById("chart");
+      chartElement.innerHTML = "";
+      chart = window.LightweightCharts.createChart(chartElement, {
+        layout: { background: { color: "#ffffff" } },
+        timeScale: { timeVisible: true, secondsVisible: false }
       });
-
-      resizeObserver = new ResizeObserver(() => {
-        if (!chart) return;
-
-        chart.applyOptions({
-          width: Math.max(container.clientWidth, 1),
-          height: Math.max(container.clientHeight, 1)
-        });
-      });
-
-      resizeObserver.observe(container);
     }
 
     function syncTooltip(param) {
       const tooltip = document.getElementById("tooltip");
-
-      if (!param?.time || !param?.point || param.point.x < 0 || param.point.y < 0) {
+      if (param.point === undefined || !param.time) {
         tooltip.style.display = "none";
         return;
       }
 
-      const viewMode = getViewMode();
-      const rows = [];
+      const rows = seriesEntries
+        .filter((entry) => entry.api)
+        .map((entry) => {
+          const data = entry.api.data();
+          const point = data.find((p) => p.time === param.time);
+          if (!point) return "";
 
-      seriesEntries.forEach((entry) => {
-        const point = param.seriesData.get(entry.api);
-        if (!point || !Number.isFinite(point.value)) return;
-
-        rows.push(`
-          <div class="tooltip-row">
-            <span class="tooltip-name">
-              <span class="tooltip-dot" style="background:${entry.color}"></span>
-              ${entry.name}
-            </span>
-            <strong>${formatValue(point.value, viewMode)}</strong>
-          </div>
-        `);
-      });
-
-      if (!rows.length) {
-        tooltip.style.display = "none";
-        return;
-      }
+          const value = formatValue(point.value, getViewMode());
+          return `
+            <div class="tooltip-row">
+              <div class="tooltip-name">
+                <div class="tooltip-dot" style="background: ${entry.color}"></div>
+                ${entry.name}
+              </div>
+              <div>${value}</div>
+            </div>
+          `;
+        })
+        .filter(Boolean);
 
       tooltip.innerHTML = `
         <div class="tooltip-date">${formatDate(param.time)}</div>
         ${rows.join("")}
       `;
-
       tooltip.style.display = "block";
     }
 
@@ -1145,35 +911,21 @@
 
       if (!selected.length) {
         resetChart();
-        chartElement.innerHTML = `
-          <div class="empty-state">
-            Bitte mindestens einen Rohstoff auswählen.
-          </div>
-        `;
+        chartElement.innerHTML = `<div class="empty-state">Bitte mindestens einen Rohstoff auswählen.</div>`;
         setStatus("Keine Zeitreihe ausgewählt.");
         return;
       }
 
-      const timeline = getTimeline(selected);
+      const timeline = getTimeline(selected, viewMode);
       const latestDate = timeline.length ? timeline[timeline.length - 1] : null;
       const displayStartDate = getDisplayStartDate(latestDate);
       const logicalRange = getLogicalDisplayRange(timeline, displayStartDate);
-
-      const basisDate = getBasisTargetDate(
-        selected,
-        latestDate,
-        displayStartDate
-      );
 
       resetChart();
       createChart();
 
       selected.forEach((series) => {
-        const data = transformSeriesData(
-          series,
-          viewMode,
-          basisDate
-        );
+        const data = getSeriesPoints(series, viewMode);
 
         if (!data.length) return;
 
@@ -1195,34 +947,21 @@
 
       if (!seriesEntries.length) {
         resetChart();
-        chartElement.innerHTML = `
-          <div class="empty-state">
-            Für die aktuelle Auswahl liegen keine Daten vor.
-          </div>
-        `;
+        chartElement.innerHTML = `<div class="empty-state">Für die aktuelle Auswahl liegen keine Daten vor.</div>`;
         setStatus("Für diese Auswahl liegen keine darstellbaren Daten vor.");
         return;
       }
 
-      /*
-        All history stays loaded. The buttons change only the visible logical
-        range of the time scale; "Alles" calls fitContent.
-      */
       applyDisplayViewport(logicalRange);
 
       const displayedRange = displayStartDate
         ? `${displayStartDate} bis ${latestDate}`
         : `erste verfügbare Beobachtung bis ${latestDate}`;
 
-      const basisText = viewMode === "price"
-        ? "keine Indexbasis"
-        : `${getBasisLabel()} (${basisDate || "erste verfügbare Beobachtung"})`;
-
       setStatus(
         `${seriesEntries.length} Reihen · ${getViewModeLabel(viewMode)} · ` +
         `Anzeige: ${displayedRange} · ` +
-        `X-Achse: ${logicalRange ? "Zeitfenster gesetzt" : "gesamte Historie"} · ` +
-        `Basis: ${basisText}`
+        `Basis: ${getBasisLabel()}`
       );
 
       if (chart) {
@@ -1239,8 +978,8 @@
           return `
             <div class="legend-item">
               <div class="legend-title">
-                <span class="legend-swatch" style="background: ${entry.color}"></span>
-                <span>${entry.ticker}</span>
+                <div class="legend-swatch" style="background: ${entry.color}"></div>
+                ${entry.name}
               </div>
               <div class="legend-price">${formatActualPrice(price)}</div>
             </div>
@@ -1251,17 +990,24 @@
 
     function requestRender() {
       if (renderTimer) clearTimeout(renderTimer);
-      renderTimer = window.setTimeout(renderChart, 100);
+      renderTimer = setTimeout(renderChart, 50);
     }
 
-    function onPeriodButtonClick(event) {
-      displayRangeKey = event.target.dataset.range;
-      updatePeriodButtons();
-      requestRender();
-    }
-
-    function onViewModeChange() {
-      requestRender();
+    async function loadData() {
+      try {
+        setStatus("Daten werden geladen...");
+        const response = await fetch("data/commodities_transformed.json");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        dataset = await response.json();
+        setStatus("Daten geladen. Wählen Sie Rohstoffe aus.");
+        buildControls();
+        renderChart();
+      } catch (error) {
+        console.error("Fehler beim Laden der Daten:", error);
+        setStatus(`Fehler: ${error.message}`);
+      }
     }
 
     function setupEventListeners() {
@@ -1281,24 +1027,21 @@
       });
 
       document.querySelectorAll(".period-button").forEach((button) => {
-        button.addEventListener("click", onPeriodButtonClick);
+        button.addEventListener("click", () => {
+          displayRangeKey = button.dataset.range;
+          updatePeriodButtons();
+          requestRender();
+        });
       });
 
       document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
-        radio.addEventListener("change", onViewModeChange);
+        radio.addEventListener("change", requestRender);
       });
 
       document.getElementById("basis-button").addEventListener("click", () => {
         const dialog = document.getElementById("basis-dialog");
-
-        const basisOptions = dialog.querySelectorAll('input[name="basis-choice"]');
-        basisOptions.forEach((option) => {
-          option.checked = option.value === indexBasisKey;
-        });
-
         const customDateInput = document.getElementById("custom-basis-date");
         customDateInput.value = customBasisDate;
-
         dialog.showModal();
       });
 
@@ -1310,41 +1053,33 @@
         const selected = document.querySelector(
           '#basis-dialog input[name="basis-choice"]:checked'
         );
-        if (selected) {
-          indexBasisKey = selected.value;
-
-          if (indexBasisKey === "custom") {
-            customBasisDate = document.getElementById("custom-basis-date").value;
-          }
-
-          requestRender();
+        if (selected && selected.value === "custom") {
+          const customDateInput = document.getElementById("custom-basis-date");
+          customBasisDate = customDateInput.value;
+        } else {
+          customBasisDate = "";
         }
-
         document.getElementById("basis-dialog").close();
-      });
-    }
-
-    async function fetchData() {
-      try {
-        const response = await fetch("./data/commodities.json");
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        dataset = await response.json();
-        buildControls();
         requestRender();
+      });
 
-        setInterval(() => {
-          if (!fetchInProgress) fetchData();
-        }, AUTO_REFRESH_MS);
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-        setStatus(`Fehler beim Abrufen der Daten: ${error.message}`);
+      if (window.ResizeObserver) {
+        resizeObserver = new ResizeObserver(() => requestRender());
+        resizeObserver.observe(document.getElementById("chart-shell"));
       }
+
+      setInterval(() => {
+        if (!fetchInProgress) {
+          fetchInProgress = true;
+          loadData().finally(() => {
+            fetchInProgress = false;
+          });
+        }
+      }, AUTO_REFRESH_MS);
     }
 
-    buildControls();
+    loadData();
     setupEventListeners();
-    fetchData();
   </script>
 </body>
 </html>
