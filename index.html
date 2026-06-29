@@ -21,8 +21,7 @@
 
     * { box-sizing: border-box; }
 
-    html,
-    body {
+    html, body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -487,6 +486,31 @@
         </label>
 
         <label class="basis-option">
+          <input type="radio" name="basis-choice" value="1y">
+          1 Jahr vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="3y">
+          3 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="5y">
+          5 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="10y">
+          10 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
+          <input type="radio" name="basis-choice" value="20y">
+          20 Jahre vor dem letzten verfügbaren Kurs
+        </label>
+
+        <label class="basis-option">
           <input type="radio" name="basis-choice" value="first-common">
           Erste gemeinsame Beobachtung aller ausgewählten Reihen
         </label>
@@ -508,11 +532,13 @@
   <script>
     /*
       Data source:
-      The page reads transformed data from data/commodities_transformed.json.
-      This file is created by transform_series.py after download.
+      The page reads raw data from data/commodities_transformed.json.
+      This file contains:
       - data: original prices
-      - indexed: (price / first_price) × 100
-      - log_return: 100 × ln(price / first_price)
+      - first_price: first price (for indexing)
+      - base_dates: reference dates (1y, 3y, etc.)
+      
+      Browser computes indexed and log_return dynamically based on basis choice.
     */
 
     const COMMODITY_GROUPS = {
@@ -560,17 +586,13 @@
     const COLOR_BY_TICKER = {
       "CL=F": "#003f5c", "BZ=F": "#ef5675", "NG=F": "#2f4b7c",
       "RB=F": "#ffa600", "HO=F": "#7a5195",
-
       "GC=F": "#c99700", "SI=F": "#6b7280", "HG=F": "#d04a02",
       "PL=F": "#5d9cec", "PA=F": "#a42cd6", "ALI=F": "#00a6a6",
-
       "ZC=F": "#6a994e", "ZW=F": "#bc6c25", "KE=F": "#99582a",
       "ZS=F": "#40916c", "ZL=F": "#e9c46a", "ZM=F": "#386641",
       "ZO=F": "#90be6d", "ZR=F": "#577590",
-
       "KC=F": "#6f4e37", "SB=F": "#e76f51", "CC=F": "#5f0f40",
       "CT=F": "#4d908e", "OJ=F": "#f77f00",
-
       "LE=F": "#9b2226", "HE=F": "#bb3e03", "GF=F": "#495057"
     };
 
@@ -585,6 +607,7 @@
     let renderTimer = null;
 
     let displayRangeKey = "all";
+    let indexBasisKey = "display-start";
     let customBasisDate = "";
 
     function getColor(ticker) {
@@ -619,7 +642,17 @@
     }
 
     function getBasisLabel() {
-      return customBasisDate ? customBasisDate : "Beginn des Anzeigezeitraums";
+      const labels = {
+        "display-start": "Anzeige-Start",
+        "1y": "1 Jahr zurück",
+        "3y": "3 Jahre zurück",
+        "5y": "5 Jahre zurück",
+        "10y": "10 Jahre zurück",
+        "20y": "20 Jahre zurück",
+        "first-common": "erste gemeinsame Beobachtung",
+        "custom": customBasisDate ? customBasisDate : "eigenes Datum"
+      };
+      return labels[indexBasisKey] || "Anzeige-Start";
     }
 
     function formatDate(time) {
@@ -676,30 +709,77 @@
       return dataset.series.filter((series) => selectedTickers.has(series.ticker));
     }
 
-    function getSeriesPoints(series, viewMode) {
-      // Load precomputed data based on view mode
-      let dataArray = series.data || [];
-      
-      if (viewMode === "indexed") {
-        dataArray = series.indexed || [];
-      } else if (viewMode === "log-return") {
-        dataArray = series.log_return || [];
+    function getSeriesPoints(series, viewMode, basisDate) {
+      const rawData = series.data || [];
+      if (rawData.length === 0) return [];
+
+      // Find base price based on view mode and basis date
+      let basePrice = null;
+
+      if (viewMode === "price") {
+        // No indexing needed
+        return rawData
+          .map(([time, value]) => ({
+            time,
+            value: Number(value)
+          }))
+          .filter((point) => Number.isFinite(point.value) && point.value > 0)
+          .sort((a, b) => a.time.localeCompare(b.time));
       }
 
-      return dataArray
-        .map(([time, value]) => ({
-          time,
-          value: Number(value)
-        }))
-        .filter((point) => Number.isFinite(point.value))
+      // For indexed and log-return modes, find base price
+      if (basisDate) {
+        // Find closest date >= basisDate
+        for (const [date, price] of rawData) {
+          if (date >= basisDate) {
+            basePrice = Number(price);
+            break;
+          }
+        }
+      }
+
+      // Fallback to first price
+      if (basePrice === null) {
+        for (const [date, price] of rawData) {
+          const p = Number(price);
+          if (p > 0) {
+            basePrice = p;
+            break;
+          }
+        }
+      }
+
+      if (basePrice === null || basePrice <= 0) return [];
+
+      // Transform data based on view mode
+      return rawData
+        .map(([time, value]) => {
+          const v = Number(value);
+          if (!Number.isFinite(v) || v <= 0) return null;
+
+          let transformedValue;
+          if (viewMode === "indexed") {
+            transformedValue = (v / basePrice) * 100;
+          } else if (viewMode === "log-return") {
+            transformedValue = 100 * Math.log(v / basePrice);
+          } else {
+            transformedValue = v;
+          }
+
+          return {
+            time,
+            value: transformedValue
+          };
+        })
+        .filter((point) => point !== null)
         .sort((a, b) => a.time.localeCompare(b.time));
     }
 
-    function getLatestDate(selectedSeries, viewMode) {
+    function getLatestDate(selectedSeries) {
       const dates = selectedSeries
         .map((series) => {
-          const points = getSeriesPoints(series, viewMode);
-          return points.length ? points[points.length - 1].time : null;
+          const data = series.data || [];
+          return data.length ? data[data.length - 1][0] : null;
         })
         .filter(Boolean)
         .sort();
@@ -711,21 +791,42 @@
       return subtractYears(latestDate, Number.parseInt(displayRangeKey, 10));
     }
 
-    function getFirstCommonDate(selectedSeries, viewMode) {
+    function getFirstCommonDate(selectedSeries) {
       const firstDates = selectedSeries
         .map((series) => {
-          const points = getSeriesPoints(series, viewMode);
-          return points.length ? points[0].time : null;
+          const data = series.data || [];
+          return data.length ? data[0][0] : null;
         })
         .filter(Boolean)
         .sort();
       return firstDates.length ? firstDates[firstDates.length - 1] : null;
     }
 
-    function getTimeline(selectedSeries, viewMode) {
+    function getBasisTargetDate(selectedSeries, latestDate, displayStartDate) {
+      if (indexBasisKey === "display-start") {
+        return displayStartDate || getFirstCommonDate(selectedSeries);
+      }
+
+      if (indexBasisKey === "first-common") {
+        return getFirstCommonDate(selectedSeries);
+      }
+
+      if (indexBasisKey === "custom") {
+        return customBasisDate || displayStartDate || getFirstCommonDate(selectedSeries);
+      }
+
+      const years = Number.parseInt(indexBasisKey, 10);
+      if (Number.isFinite(years) && latestDate) {
+        return subtractYears(latestDate, years);
+      }
+
+      return displayStartDate || getFirstCommonDate(selectedSeries);
+    }
+
+    function getTimeline(selectedSeries) {
       return [...new Set(
         selectedSeries.flatMap((series) =>
-          getSeriesPoints(series, viewMode).map((point) => point.time)
+          (series.data || []).map((point) => point[0])
         )
       )].sort();
     }
@@ -765,8 +866,8 @@
     }
 
     function getLatestActualPrice(series) {
-      const points = getSeriesPoints(series, "price");
-      return points.length ? points[points.length - 1].value : NaN;
+      const data = series.data || [];
+      return data.length ? Number(data[data.length - 1][1]) : NaN;
     }
 
     function buildControls() {
@@ -916,16 +1017,18 @@
         return;
       }
 
-      const timeline = getTimeline(selected, viewMode);
+      const timeline = getTimeline(selected);
       const latestDate = timeline.length ? timeline[timeline.length - 1] : null;
       const displayStartDate = getDisplayStartDate(latestDate);
       const logicalRange = getLogicalDisplayRange(timeline, displayStartDate);
+
+      const basisDate = getBasisTargetDate(selected, latestDate, displayStartDate);
 
       resetChart();
       createChart();
 
       selected.forEach((series) => {
-        const data = getSeriesPoints(series, viewMode);
+        const data = getSeriesPoints(series, viewMode, basisDate);
 
         if (!data.length) return;
 
@@ -1040,6 +1143,10 @@
 
       document.getElementById("basis-button").addEventListener("click", () => {
         const dialog = document.getElementById("basis-dialog");
+        const basisOptions = dialog.querySelectorAll('input[name="basis-choice"]');
+        basisOptions.forEach((option) => {
+          option.checked = option.value === indexBasisKey;
+        });
         const customDateInput = document.getElementById("custom-basis-date");
         customDateInput.value = customBasisDate;
         dialog.showModal();
@@ -1053,11 +1160,15 @@
         const selected = document.querySelector(
           '#basis-dialog input[name="basis-choice"]:checked'
         );
-        if (selected && selected.value === "custom") {
-          const customDateInput = document.getElementById("custom-basis-date");
-          customBasisDate = customDateInput.value;
-        } else {
-          customBasisDate = "";
+        if (selected) {
+          indexBasisKey = selected.value;
+
+          if (indexBasisKey === "custom") {
+            const customDateInput = document.getElementById("custom-basis-date");
+            customBasisDate = customDateInput.value;
+          } else {
+            customBasisDate = "";
+          }
         }
         document.getElementById("basis-dialog").close();
         requestRender();
@@ -1065,7 +1176,7 @@
 
       if (window.ResizeObserver) {
         resizeObserver = new ResizeObserver(() => requestRender());
-        resizeObserver.observe(document.getElementById("chart-shell"));
+        resizeObserver.observe(document.getElementById("chart"));
       }
 
       setInterval(() => {
