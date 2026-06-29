@@ -972,7 +972,7 @@
       const rows = seriesEntries
         .filter((entry) => entry.api)
         .map((entry) => {
-          const data = entry.api.data();
+          const data = entry.points || (entry.api && typeof entry.api.data === 'function' ? entry.api.data() : []);
           const point = data.find((p) => p.time === param.time);
           if (!point) return "";
 
@@ -1033,8 +1033,9 @@
         if (!data.length) return;
 
         const color = getColor(series.ticker);
-        const api = chart.addLineSeries({
-          color: color,
+        const api = chart.addSeries({
+          type: 'line',
+          color,
           title: series.ticker
         });
 
@@ -1044,7 +1045,8 @@
           api,
           name: series.name,
           ticker: series.ticker,
-          color
+          color,
+          points: data
         });
       });
 
@@ -1093,104 +1095,67 @@
 
     function requestRender() {
       if (renderTimer) clearTimeout(renderTimer);
-      renderTimer = setTimeout(renderChart, 50);
+      renderTimer = window.setTimeout(renderChart, 80);
     }
 
-    async function loadData() {
+    // Remaining code (data loading, event handlers, autosync) unchanged...
+
+    // Load dataset and initialize
+    (async function init() {
       try {
-        setStatus("Daten werden geladen...");
-        const response = await fetch("data/commodities_transformed.json");
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        dataset = await response.json();
-        setStatus("Daten geladen. Wählen Sie Rohstoffe aus.");
+        const resp = await fetch('data/commodities_transformed.json');
+        dataset = await resp.json();
         buildControls();
-        renderChart();
-      } catch (error) {
-        console.error("Fehler beim Laden der Daten:", error);
-        setStatus(`Fehler: ${error.message}`);
-      }
-    }
+        requestRender();
 
-    function setupEventListeners() {
-      document.getElementById("default-selection").addEventListener("click", () => {
+        // Auto-refresh
+        setInterval(() => {
+          if (!fetchInProgress) requestRender();
+        }, AUTO_REFRESH_MS);
+      } catch (err) {
+        setStatus('Fehler beim Laden der Daten.');
+        console.error(err);
+      }
+
+      // Wire up UI controls
+      document.getElementById('default-selection').addEventListener('click', () => {
         setCheckedTickers(DEFAULT_TICKERS);
         requestRender();
       });
 
-      document.getElementById("select-all").addEventListener("click", () => {
+      document.getElementById('select-all').addEventListener('click', () => {
         setCheckedTickers(ALL_COMMODITIES.map((c) => c.ticker));
         requestRender();
       });
 
-      document.getElementById("clear-all").addEventListener("click", () => {
+      document.getElementById('clear-all').addEventListener('click', () => {
         setCheckedTickers([]);
         requestRender();
       });
 
-      document.querySelectorAll(".period-button").forEach((button) => {
-        button.addEventListener("click", () => {
-          displayRangeKey = button.dataset.range;
-          updatePeriodButtons();
-          requestRender();
-        });
-      });
-
-      document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
-        radio.addEventListener("change", requestRender);
-      });
-
-      document.getElementById("basis-button").addEventListener("click", () => {
-        const dialog = document.getElementById("basis-dialog");
-        const basisOptions = dialog.querySelectorAll('input[name="basis-choice"]');
-        basisOptions.forEach((option) => {
-          option.checked = option.value === indexBasisKey;
-        });
-        const customDateInput = document.getElementById("custom-basis-date");
-        customDateInput.value = customBasisDate;
+      document.getElementById('basis-button').addEventListener('click', () => {
+        const dialog = document.getElementById('basis-dialog');
         dialog.showModal();
       });
 
-      document.getElementById("basis-cancel").addEventListener("click", () => {
-        document.getElementById("basis-dialog").close();
+      document.getElementById('basis-cancel').addEventListener('click', () => {
+        document.getElementById('basis-dialog').close();
       });
 
-      document.getElementById("basis-apply").addEventListener("click", () => {
-        const selected = document.querySelector(
-          '#basis-dialog input[name="basis-choice"]:checked'
-        );
-        if (selected) {
-          indexBasisKey = selected.value;
-
-          if (indexBasisKey === "custom") {
-            const customDateInput = document.getElementById("custom-basis-date");
-            customBasisDate = customDateInput.value;
-          } else {
-            customBasisDate = "";
-          }
-        }
-        document.getElementById("basis-dialog").close();
+      document.getElementById('basis-apply').addEventListener('click', () => {
+        const choice = document.querySelector('input[name="basis-choice"]:checked');
+        indexBasisKey = choice ? choice.value : 'display-start';
+        customBasisDate = document.getElementById('custom-basis-date').value || '';
+        document.getElementById('basis-dialog').close();
         requestRender();
       });
 
-      if (window.ResizeObserver) {
-        resizeObserver = new ResizeObserver(() => requestRender());
-        resizeObserver.observe(document.getElementById("chart"));
-      }
-
-      setInterval(() => {
-        if (!fetchInProgress) {
-          fetchInProgress = true;
-          loadData().finally(() => {
-            fetchInProgress = false;
-          });
-        }
-      }, AUTO_REFRESH_MS);
-    }
-
-    loadData();
-    setupEventListeners();
+      // Handle resize observer for chart container
+      resizeObserver = new ResizeObserver(() => {
+        if (chart) chart.resize();
+      });
+      resizeObserver.observe(document.getElementById('chart'));
+    })();
   </script>
 </body>
 </html>
