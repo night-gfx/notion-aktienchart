@@ -1,262 +1,116 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Notion Aktienchart</title>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>Aktienchart</title>
+
   <style>
-    :root {
-      --page-bg: #f7f7f5;
-      --card-bg: #ffffff;
-      --text: #1f1f1f;
-      --muted: #6b6b6b;
-      --border: #e7e7e2;
-      --accent: #2f6fed;
-    }
-
-    * { box-sizing: border-box; }
-
+    html,
     body {
+      width: 100%;
+      height: 100%;
       margin: 0;
-      background: var(--page-bg);
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-                   "Segoe UI", Roboto, Arial, sans-serif;
-    }
-
-    .page {
-      width: min(1440px, 100%);
-      margin: 0 auto;
-      padding: 16px;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: end;
-      gap: 16px;
-      padding: 8px 2px 14px;
-    }
-
-    h1 {
-      font-size: 18px;
-      margin: 0 0 4px;
-      letter-spacing: -0.01em;
-    }
-
-    .subtitle {
-      color: var(--muted);
-      font-size: 13px;
-      margin: 0;
-    }
-
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
-
-    select,
-    input,
-    button {
-      height: 36px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--card-bg);
-      color: var(--text);
-      font: inherit;
-      font-size: 13px;
-    }
-
-    select, input {
-      padding: 0 10px;
-    }
-
-    input {
-      width: 160px;
-    }
-
-    button {
-      padding: 0 12px;
-      cursor: pointer;
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
-      font-weight: 600;
-    }
-
-    button:hover {
-      filter: brightness(0.96);
-    }
-
-    .chart-card {
-      height: 760px;
+      padding: 0;
       overflow: hidden;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--card-bg);
+      background: #ffffff;
+      font-family: Arial, Helvetica, sans-serif;
     }
 
     .tradingview-widget-container,
     .tradingview-widget-container__widget {
-      height: 100%;
       width: 100%;
-    }
-
-    .footer {
-      color: var(--muted);
-      font-size: 12px;
-      padding: 10px 2px 0;
-    }
-
-    @media (max-width: 700px) {
-      .header {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      .chart-card {
-        height: 620px;
-      }
-
-      input {
-        width: min(100%, 210px);
-      }
+      height: 100%;
     }
   </style>
 </head>
 
 <body>
-  <main class="page">
-    <header class="header">
-      <div>
-        <h1 id="chart-title">Aktienchart</h1>
-        <p class="subtitle">
-          Automatisch aktualisierter TradingView-Chart mit langer verfügbarer Kurshistorie.
-        </p>
-      </div>
-
-      <div class="controls">
-        <select id="symbol-select" aria-label="Wertpapier auswählen">
-          <option value="NYSE:XOM">Exxon Mobil (XOM)</option>
-          <option value="NASDAQ:AAPL">Apple (AAPL)</option>
-          <option value="NASDAQ:MSFT">Microsoft (MSFT)</option>
-          <option value="NASDAQ:NVDA">NVIDIA (NVDA)</option>
-          <option value="NYSE:BRK.B">Berkshire Hathaway B</option>
-          <option value="XETR:SAP">SAP</option>
-          <option value="XETR:ADS">adidas</option>
-          <option value="INDEX:DAX">DAX</option>
-          <option value="SP:SPX">S&amp;P 500</option>
-          <option value="NASDAQ:QQQ">Invesco QQQ ETF</option>
-        </select>
-
-        <input
-          id="custom-symbol"
-          type="text"
-          placeholder="z. B. NYSE:KO"
-          autocomplete="off"
-          aria-label="Eigenes Symbol eingeben"
-        >
-
-        <button id="load-symbol" type="button">Laden</button>
-      </div>
-    </header>
-
-    <section class="chart-card" aria-label="Interaktiver Aktienchart">
-      <div class="tradingview-widget-container">
-        <div class="tradingview-widget-container__widget" id="chart-container"></div>
-      </div>
-    </section>
-
-    <p class="footer">
-      Tipp: Du kannst die Seite mit <code>?symbol=NASDAQ%3AAAPL</code> aufrufen,
-      um direkt einen bestimmten Chart zu öffnen.
-    </p>
-  </main>
+  <div class="tradingview-widget-container">
+    <div
+      id="tradingview-chart"
+      class="tradingview-widget-container__widget"
+    ></div>
+  </div>
 
   <script>
-    const DEFAULT_SYMBOL = "NYSE:XOM";
+    /*
+      Symbol aus der URL auslesen.
 
-    function normaliseSymbol(value) {
-      const symbol = String(value || "").trim().toUpperCase();
+      Beispiele:
+      ?symbol=NASDAQ%3AAAPL  → Apple
+      ?symbol=XETR%3ASAP     → SAP
+      ?symbol=NYSE%3AXOM     → ExxonMobil
 
-      // Examples accepted: NASDAQ:AAPL, NYSE:XOM, XETR:SAP, INDEX:DAX, SP:SPX
-      const valid = /^[A-Z0-9._-]+:[A-Z0-9._-]+$/;
-      return valid.test(symbol) ? symbol : DEFAULT_SYMBOL;
-    }
+      Ohne Symbol wird Apple geladen.
+    */
+    const urlParameters = new URLSearchParams(window.location.search);
 
-    function getSymbolFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      return normaliseSymbol(params.get("symbol") || DEFAULT_SYMBOL);
-    }
+    const symbolFromUrl =
+      urlParameters.get("symbol") || "NASDAQ:AAPL";
 
-    function updateUrl(symbol) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("symbol", symbol);
-      window.history.replaceState({}, "", url);
-    }
+    const symbol = symbolFromUrl.trim().toUpperCase();
 
-    function loadChart(symbol) {
-      const cleanSymbol = normaliseSymbol(symbol);
-      const container = document.getElementById("chart-container");
+    document.title = symbol + " – Aktienchart";
 
-      container.innerHTML = "";
+    /*
+      TradingView-Widget dynamisch erzeugen.
+      Die obere Leiste bleibt sichtbar, damit dort die
+      TradingView-Suche mit Vorschlägen genutzt werden kann.
+    */
+    const widgetContainer = document.getElementById("tradingview-chart");
 
-      const script = document.createElement("script");
-      script.type = "text/javascript";
-      script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-      script.async = true;
+    const tradingViewScript = document.createElement("script");
 
-      // Official TradingView Advanced Chart widget configuration
-      script.text = JSON.stringify({
-        autosize: true,
-        symbol: cleanSymbol,
-        interval: "D",
-        timezone: "Europe/Berlin",
-        theme: "light",
-        style: "1",
-        locale: "de_DE",
-        backgroundColor: "rgba(255, 255, 255, 1)",
-        gridColor: "rgba(46, 46, 46, 0.06)",
-        withdateranges: true,
-        allow_symbol_change: true,
-        hide_side_toolbar: false,
-        save_image: true,
-        calendar: false,
-        details: true,
-        hotlist: false,
-        hide_volume: false,
-        support_host: "https://www.tradingview.com"
-      });
+    tradingViewScript.type = "text/javascript";
+    tradingViewScript.src =
+      "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
 
-      container.appendChild(script);
+    tradingViewScript.async = true;
 
-      document.getElementById("chart-title").textContent = cleanSymbol + " – Aktienchart";
-      document.getElementById("custom-symbol").value = cleanSymbol;
+    tradingViewScript.text = JSON.stringify({
+      autosize: true,
 
-      const select = document.getElementById("symbol-select");
-      const existsInList = Array.from(select.options).some(option => option.value === cleanSymbol);
-      if (existsInList) select.value = cleanSymbol;
+      symbol: symbol,
+      interval: "D",
+      timezone: "Europe/Berlin",
+      theme: "light",
+      style: "3",
+      locale: "de_DE",
 
-      updateUrl(cleanSymbol);
-    }
+      /*
+        Die obere Leiste bleibt an:
+        Dort klickst du auf den Ticker und kannst nach
+        Unternehmen oder Symbolen suchen.
+      */
+      hide_top_toolbar: false,
+      allow_symbol_change: true,
 
-    document.getElementById("symbol-select").addEventListener("change", (event) => {
-      loadChart(event.target.value);
+      /*
+        Alles andere möglichst schlank halten.
+      */
+      hide_side_toolbar: true,
+      hide_legend: true,
+      hide_volume: true,
+      withdateranges: false,
+
+      save_image: false,
+      calendar: false,
+      details: false,
+      hotlist: false,
+      watchlist: [],
+
+      backgroundColor: "rgba(255, 255, 255, 1)",
+      gridColor: "rgba(46, 46, 46, 0.06)",
+
+      studies: [],
+      support_host: "https://www.tradingview.com"
     });
 
-    document.getElementById("load-symbol").addEventListener("click", () => {
-      loadChart(document.getElementById("custom-symbol").value);
-    });
-
-    document.getElementById("custom-symbol").addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        loadChart(event.target.value);
-      }
-    });
-
-    loadChart(getSymbolFromUrl());
+    widgetContainer.appendChild(tradingViewScript);
   </script>
 </body>
 </html>
