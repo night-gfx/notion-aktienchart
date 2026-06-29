@@ -88,6 +88,43 @@
       cursor: pointer;
     }
 
+    .period-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 6px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #ffffff;
+    }
+
+    .period-title {
+      margin-right: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .period-button {
+      min-height: 24px;
+      padding: 2px 6px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      font-size: 12px;
+    }
+
+    .period-button:hover {
+      background: #eef2f7;
+    }
+
+    .period-button.active {
+      border-color: #bfdbfe;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+
     .mode-box {
       display: inline-flex;
       flex-wrap: wrap;
@@ -298,6 +335,16 @@
         <button id="select-all" type="button">Alle auswählen</button>
         <button id="clear-all" type="button">Alle abwählen</button>
 
+        <div class="period-box" aria-label="Angezeigter Zeitraum">
+          <span class="period-title">Zeitraum:</span>
+          <button class="period-button" data-range="1y" type="button">1J</button>
+          <button class="period-button" data-range="3y" type="button">3J</button>
+          <button class="period-button" data-range="5y" type="button">5J</button>
+          <button class="period-button" data-range="10y" type="button">10J</button>
+          <button class="period-button" data-range="20y" type="button">20J</button>
+          <button class="period-button active" data-range="all" type="button">Alles</button>
+        </div>
+
         <div class="mode-box" aria-label="Skalierungsmodus">
           <span class="mode-title">Skala:</span>
 
@@ -340,7 +387,7 @@
 
   <script>
     /*
-      The page always shows each selected series from its first available observation.
+      The page loads full daily history and uses period buttons to set the initial visible range.
       The GitHub workflow writes this JSON from Yahoo Finance. No browser
       request is made to Yahoo Finance, avoiding CORS errors.
     */
@@ -417,6 +464,7 @@
     let fetchInProgress = false;
     let renderTimer = null;
     let resizeObserver = null;
+    let currentRangeKey = "all";
 
     function getColor(ticker) {
       return COLOR_BY_TICKER[ticker] || "#1d4ed8";
@@ -435,6 +483,40 @@
       if (mode === "price") return "Preis";
       if (mode === "log") return "logarithmischer Preis";
       return "Indexiert auf 100";
+    }
+
+    function getRangeLabel() {
+      const labels = {
+        "1y": "letztes Jahr",
+        "3y": "letzte 3 Jahre",
+        "5y": "letzte 5 Jahre",
+        "10y": "letzte 10 Jahre",
+        "20y": "letzte 20 Jahre",
+        "all": "gesamte Historie"
+      };
+
+      return labels[currentRangeKey] || "gesamte Historie";
+    }
+
+    function getRangeStartDate(latestTime) {
+      if (currentRangeKey === "all" || !latestTime) {
+        return null;
+      }
+
+      const years = Number.parseInt(currentRangeKey, 10);
+      const latestDate = new Date(`${latestTime}T12:00:00Z`);
+      latestDate.setUTCFullYear(latestDate.getUTCFullYear() - years);
+
+      return latestDate.toISOString().slice(0, 10);
+    }
+
+    function setActiveRangeButton() {
+      document.querySelectorAll(".period-button").forEach((button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.range === currentRangeKey
+        );
+      });
     }
 
     function formatTimestamp(timestamp) {
@@ -565,26 +647,35 @@
       return dataset.series.filter((series) => selected.has(series.ticker));
     }
 
-    function transformData(series, mode) {
-      let points = (series.data || [])
+    function transformData(series, mode, visibleFrom) {
+      const points = (series.data || [])
         .map(([time, value]) => ({
           time,
-          value: Number(value),
-          date: new Date(`${time}T12:00:00Z`)
+          value: Number(value)
         }))
         .filter((point) => Number.isFinite(point.value) && point.value > 0);
 
       if (!points.length) return [];
 
       if (mode === "indexed") {
-        const base = points[0].value;
+        /*
+          In index mode, 100 is the first available observation of the chosen
+          period. Data before that date remain available for the chart but are
+          outside the initially visible window.
+        */
+        const basePoint = visibleFrom
+          ? points.find((point) => point.time >= visibleFrom)
+          : points[0];
+
+        if (!basePoint) return [];
+
         return points.map((point) => ({
           time: point.time,
-          value: (point.value / base) * 100
+          value: (point.value / basePoint.value) * 100
         }));
       }
 
-      return points.map((point) => ({ time: point.time, value: point.value }));
+      return points;
     }
 
     function resetChart() {
@@ -744,6 +835,13 @@
       const mode = getScaleMode();
       const chartElement = document.getElementById("chart");
 
+      const allTimes = selected
+        .flatMap((series) => (series.data || []).map(([time]) => time))
+        .sort();
+
+      const latestTime = allTimes.length ? allTimes[allTimes.length - 1] : null;
+      const visibleFrom = getRangeStartDate(latestTime);
+
       if (!selected.length) {
         resetChart();
         chartElement.innerHTML = `<div class="empty-state">Bitte mindestens einen Rohstoff auswählen.</div>`;
@@ -756,7 +854,7 @@
       setPriceScaleMode(mode);
 
       selected.forEach((series) => {
-        const data = transformData(series, mode);
+        const data = transformData(series, mode, visibleFrom);
         if (!data.length) return;
 
         const color = getColor(series.ticker);
@@ -795,9 +893,21 @@
 
       chart.timeScale().fitContent();
 
+      /*
+        The full daily history remains loaded. These buttons only set the
+        initially visible window — just like a TradingView-style range preset.
+        The user can still zoom and drag afterwards.
+      */
+      if (visibleFrom && latestTime) {
+        chart.timeScale().setVisibleRange({
+          from: visibleFrom,
+          to: latestTime
+        });
+      }
+
       setStatus(
         `${seriesEntries.length} Reihen · ${getScaleText(mode)} · ` +
-        `ab erster verfügbarer Beobachtung · tägliche Schlusskurse · ` +
+        `${getRangeLabel()} · tägliche Schlusskurse · ` +
         `Datenstand: ${formatTimestamp(dataset.generated_at)} · ` +
         `Prüfung auf neue Daten alle 60 Sekunden.`
       );
@@ -851,6 +961,14 @@
         fetchInProgress = false;
       }
     }
+
+    document.querySelectorAll(".period-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        currentRangeKey = button.dataset.range;
+        setActiveRangeButton();
+        requestRender();
+      });
+    });
 
     document.getElementById("energy-only").addEventListener("click", () => {
       setCheckedTickers(COMMODITY_GROUPS.Energy.map(item => item.ticker));
