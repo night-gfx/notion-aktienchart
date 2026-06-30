@@ -550,6 +550,8 @@
           Indexbasis: Anzeige-Start
         </button>
         <button id="comparison-point" type="button">Vergleichspunkt wählen</button>
+        <button id="set-price-alarm" type="button">Preisalarm setzen</button>
+        <button id="clear-price-alarm" type="button">Preisalarm löschen</button>
         <button id="toggle-events" type="button">Ereignisse</button>
         <button id="show-correlation" type="button">Korrelation</button>
       </div>
@@ -846,7 +848,11 @@
     let fetchInProgress = false;
     let renderTimer = null;
     let comparisonPickMode = false;
+    let alarmPickMode = false;
     let showEvents = false;
+    let alarmCheckTimer = null;
+
+    const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
 
     let displayRangeKey = "all";
     let indexBasisKey = "display-start";
@@ -869,6 +875,88 @@
 
     function setStatus(text) {
       document.getElementById("status").textContent = text;
+    }
+
+    function loadPriceAlarms() {
+      try {
+        return JSON.parse(localStorage.getItem(PRICE_ALARM_STORAGE_KEY) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function savePriceAlarms(alarms) {
+      localStorage.setItem(PRICE_ALARM_STORAGE_KEY, JSON.stringify(alarms));
+    }
+
+    function getPriceAlarm(ticker) {
+      return loadPriceAlarms()[ticker] || null;
+    }
+
+    function updateAlarmButtons() {
+      const selected = getSelectedSeries();
+      const oneSelected = selected.length === 1;
+      const alarm = oneSelected ? getPriceAlarm(selected[0].ticker) : null;
+      const setButton = document.getElementById("set-price-alarm");
+      const clearButton = document.getElementById("clear-price-alarm");
+      setButton.disabled = !oneSelected;
+      setButton.classList.toggle("active-tool", alarmPickMode && oneSelected);
+      setButton.textContent = alarmPickMode && oneSelected
+        ? "Jetzt Preis im Chart anklicken"
+        : "Preisalarm setzen";
+      clearButton.disabled = !alarm;
+    }
+
+    function showAlarmNotification(title, body) {
+      setStatus(`${title}: ${body}`);
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    }
+
+    async function checkPriceAlarms() {
+      const hour = new Date().getHours();
+      if (hour < 8 || hour >= 24) return;
+
+      const alarms = loadPriceAlarms();
+      if (!Object.keys(alarms).length) return;
+
+      try {
+        const dataUrl = new URL("data/commodities_transformed.json", window.location.href);
+        dataUrl.searchParams.set("alarm-check", Date.now().toString());
+        const response = await fetch(dataUrl, { cache: "no-store" });
+        if (!response.ok) return;
+        const freshDataset = await response.json();
+        dataset = freshDataset;
+
+        Object.entries(alarms).forEach(([ticker, alarm]) => {
+          const series = freshDataset.series?.find((item) => item.ticker === ticker);
+          const currentPrice = series ? getLatestActualPrice(series) : NaN;
+          if (!Number.isFinite(currentPrice) || alarm.triggered) return;
+          const reached = alarm.direction === "above"
+            ? currentPrice >= alarm.price
+            : currentPrice <= alarm.price;
+          if (!reached) return;
+
+          alarm.triggered = true;
+          alarm.triggeredAt = new Date().toISOString();
+          showAlarmNotification(
+            `Preisalarm: ${getDisplayName(ticker, ticker)}`,
+            `${formatActualPrice(currentPrice)} hat ${formatActualPrice(alarm.price)} erreicht.`
+          );
+        });
+
+        savePriceAlarms(alarms);
+        requestRender();
+      } catch (error) {
+        console.warn("Preisalarm konnte nicht geprüft werden.", error);
+      }
+    }
+
+    function startAlarmRoutine() {
+      if (alarmCheckTimer) window.clearInterval(alarmCheckTimer);
+      checkPriceAlarms();
+      alarmCheckTimer = window.setInterval(checkPriceAlarms, 60 * 60 * 1000);
     }
 
     function getViewMode() {
@@ -1409,6 +1497,8 @@
       legend.innerHTML = "";
 
       const selectedSeries = getSelectedSeries();
+      if (selectedSeries.length !== 1) alarmPickMode = false;
+      updateAlarmButtons();
       if (selectedSeries.length === 0) {
         resetChart();
         document.getElementById("chart").innerHTML =
@@ -1455,6 +1545,19 @@
               title: "Historisches Tief"
             });
           }
+        }
+        const alarm = selectedSeries.length === 1
+          ? getPriceAlarm(series.ticker)
+          : null;
+        if (alarm && viewMode === "price") {
+          lineSeries.createPriceLine({
+            price: Number(alarm.price),
+            color: "#f97316",
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: alarm.triggered ? "Preisalarm erreicht" : "Preisalarm"
+          });
         }
 
         const legendItem = document.createElement("div");
@@ -1515,6 +1618,28 @@
       });
 
       chart.subscribeClick((param) => {
+        if (alarmPickMode && param.point && seriesEntries.length === 1) {
+          const entry = seriesEntries[0];
+          const alarmPrice = Number(entry.api.coordinateToPrice(param.point.y));
+          if (Number.isFinite(alarmPrice) && alarmPrice > 0) {
+            const currentPrice = getLatestActualPrice(entry.series);
+            const alarms = loadPriceAlarms();
+            alarms[entry.series.ticker] = {
+              price: alarmPrice,
+              direction: alarmPrice >= currentPrice ? "above" : "below",
+              createdAt: new Date().toISOString(),
+              triggered: false
+            };
+            savePriceAlarms(alarms);
+            alarmPickMode = false;
+            setStatus(
+              `Preisalarm für ${getDisplayName(entry.series.ticker, entry.series.name)} bei `
+              + `${formatActualPrice(alarmPrice)} gespeichert.`
+            );
+            requestRender();
+          }
+          return;
+        }
         if (!comparisonPickMode || !param.time) return;
         customBasisDate = param.time;
         indexBasisKey = "custom";
@@ -1602,11 +1727,45 @@
 
       document.getElementById("comparison-point").addEventListener("click", () => {
         comparisonPickMode = !comparisonPickMode;
+        alarmPickMode = false;
+        updateAlarmButtons();
         const button = document.getElementById("comparison-point");
         button.classList.toggle("active-tool", comparisonPickMode);
         button.textContent = comparisonPickMode
           ? "Jetzt Datum im Chart anklicken"
           : "Vergleichspunkt wählen";
+      });
+
+      document.getElementById("set-price-alarm").addEventListener("click", async () => {
+        const selected = getSelectedSeries();
+        if (selected.length !== 1) {
+          setStatus("Ein Preisalarm ist nur bei genau einem ausgewählten Rohstoff möglich.");
+          return;
+        }
+        comparisonPickMode = false;
+        const comparisonButton = document.getElementById("comparison-point");
+        comparisonButton.classList.remove("active-tool");
+        comparisonButton.textContent = "Vergleichspunkt wählen";
+        document.querySelector('input[name="view-mode"][value="price"]').checked = true;
+        updateBasisButton();
+        alarmPickMode = !alarmPickMode;
+        if (alarmPickMode && "Notification" in window
+            && Notification.permission === "default") {
+          await Notification.requestPermission();
+        }
+        updateAlarmButtons();
+        requestRender();
+      });
+
+      document.getElementById("clear-price-alarm").addEventListener("click", () => {
+        const selected = getSelectedSeries();
+        if (selected.length !== 1) return;
+        const alarms = loadPriceAlarms();
+        delete alarms[selected[0].ticker];
+        savePriceAlarms(alarms);
+        alarmPickMode = false;
+        setStatus(`Preisalarm für ${getDisplayName(selected[0].ticker, selected[0].name)} gelöscht.`);
+        requestRender();
       });
 
       document.getElementById("toggle-events").addEventListener("click", () => {
@@ -1671,6 +1830,7 @@
         setStatus("");
         buildControls();
         renderChart();
+        startAlarmRoutine();
       } catch (error) {
         setStatus(`Fehler beim Laden: ${error.message}`);
         console.error(error);
