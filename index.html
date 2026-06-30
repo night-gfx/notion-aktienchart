@@ -729,7 +729,7 @@
 
       // For indexed and log-return modes, find base price
       if (basisDate) {
-        // Find closest date >= basisDate
+        // Find first data point on or after basisDate
         for (const [date, price] of rawData) {
           if (date >= basisDate) {
             basePrice = Number(price);
@@ -738,11 +738,11 @@
         }
       }
 
-      // Fallback to first price
-      if (basePrice === null) {
+      // If no price found on or after basisDate, use first valid price
+      if (basePrice === null || !Number.isFinite(basePrice) || basePrice <= 0) {
         for (const [date, price] of rawData) {
           const p = Number(price);
-          if (p > 0) {
+          if (Number.isFinite(p) && p > 0) {
             basePrice = p;
             break;
           }
@@ -788,7 +788,9 @@
 
     function getDisplayStartDate(latestDate) {
       if (!latestDate || displayRangeKey === "all") return null;
-      return subtractYears(latestDate, Number.parseInt(displayRangeKey, 10));
+      const years = Number.parseInt(displayRangeKey, 10);
+      if (!Number.isFinite(years)) return null;
+      return subtractYears(latestDate, years);
     }
 
     function getFirstCommonDate(selectedSeries) {
@@ -803,7 +805,9 @@
     }
 
     function getBasisTargetDate(selectedSeries, latestDate, displayStartDate) {
+      // If basis is "display-start", use the display start date (which may be null for "all")
       if (indexBasisKey === "display-start") {
+        // If displayStartDate is null (meaning "all" is selected), use first data point
         return displayStartDate || getFirstCommonDate(selectedSeries);
       }
 
@@ -815,6 +819,7 @@
         return customBasisDate || displayStartDate || getFirstCommonDate(selectedSeries);
       }
 
+      // Parse numeric basis (1y, 3y, 5y, 10y, 20y)
       const years = Number.parseInt(indexBasisKey, 10);
       if (Number.isFinite(years) && latestDate) {
         return subtractYears(latestDate, years);
@@ -832,8 +837,12 @@
     }
 
     function getLogicalDisplayRange(timeline, displayStartDate) {
-      if (!timeline.length || !displayStartDate) {
+      if (!timeline.length) {
         return null;
+      }
+      if (!displayStartDate) {
+        // Show all data
+        return { from: -0.5, to: timeline.length + 0.5 };
       }
       const firstVisibleIndex = timeline.findIndex(
         (time) => time >= displayStartDate
@@ -1000,147 +1009,67 @@
       if (!dataset) return;
 
       const selectedSeries = getSelectedSeries();
-      const latestDate = getLatestDate(selectedSeries);
-      const displayStartDate = getDisplayStartDate(latestDate);
-      const basisTargetDate = getBasisTargetDate(
-        selectedSeries,
-        latestDate,
-        displayStartDate
-      );
-
-      if (selectedSeries.length === 0 || !latestDate) {
-        setStatus("Keine Rohstoffe ausgewählt oder keine Daten verfügbar.");
+      if (selectedSeries.length === 0) {
         resetChart();
+        document.getElementById("chart").innerHTML =
+          '<div class="empty-state">Wählen Sie Rohstoffe aus</div>';
         return;
       }
 
       resetChart();
       createChart();
 
+      const latestDate = getLatestDate(selectedSeries);
+      const displayStartDate = getDisplayStartDate(latestDate);
+      const basisTargetDate = getBasisTargetDate(selectedSeries, latestDate, displayStartDate);
+      const viewMode = getViewMode();
+
+      const legend = document.getElementById("legend");
+      legend.innerHTML = "";
+
+      seriesEntries = selectedSeries.map((series) => {
+        const points = getSeriesPoints(series, viewMode, basisTargetDate);
+        const lineSeries = chart.addLineSeries({
+          color: getColor(series.ticker)
+        });
+        lineSeries.setData(points);
+
+        const legendItem = document.createElement("div");
+        legendItem.className = "legend-item";
+        const latestPrice = points.length > 0 ? points[points.length - 1].value : NaN;
+
+        legendItem.innerHTML = `
+          <div class="legend-title">
+            <div class="legend-swatch" style="background: ${getColor(series.ticker)}"></div>
+            <strong>${series.name}</strong>
+          </div>
+          <div class="legend-price">${formatValue(latestPrice, viewMode)}</div>
+        `;
+        legend.appendChild(legendItem);
+
+        return {
+          api: lineSeries,
+          points,
+          color: getColor(series.ticker),
+          name: series.name
+        };
+      });
+
+      chart.subscribeCrosshairMove(syncTooltip);
+
       const timeline = getTimeline(selectedSeries);
       const logicalRange = getLogicalDisplayRange(timeline, displayStartDate);
-
-      selectedSeries.forEach((series) => {
-        const points = getSeriesPoints(series, getViewMode(), basisTargetDate);
-        if (points.length === 0) return;
-
-        const lineOptions = {
-          color: getColor(series.ticker),
-          lineWidth: 2,
-          lastValueVisible: false
-        };
-
-        // This page pins Lightweight Charts 5.2.0. In v5, lines are created
-        // with addSeries(LineSeries, options), not addLineSeries().
-        if (typeof chart.addSeries !== "function" || !window.LightweightCharts.LineSeries) {
-          throw new Error("Lightweight Charts 5.x did not load correctly. Please reload the page.");
-        }
-        const api = chart.addSeries(window.LightweightCharts.LineSeries, lineOptions);
-
-        api.setData(points);
-        const latestPrice = getLatestActualPrice(series);
-        seriesEntries.push({
-          api,
-          ticker: series.ticker,
-          name: series.name,
-          color: getColor(series.ticker),
-          points
-        });
-      });
-
-      chart.subscribeClick((param) => {
-        if (param.point) syncTooltip(param);
-      });
-
-      chart.subscribeCrosshairMove((param) => {
-        syncTooltip(param);
-      });
-
       applyDisplayViewport(logicalRange);
-
-      buildLegend();
-
-      setStatus(
-        `Angezeigt: ${getDisplayRangeLabel()} | Indexbasis: ${getBasisLabel()} | Darstellung: ${getViewModeLabel(getViewMode())}`
-      );
-    }
-
-    function buildLegend() {
-      const legendContainer = document.getElementById("legend");
-      legendContainer.innerHTML = "";
-
-      seriesEntries.forEach((entry) => {
-        const item = document.createElement("div");
-        item.className = "legend-item";
-
-        const title = document.createElement("div");
-        title.className = "legend-title";
-
-        const swatch = document.createElement("div");
-        swatch.className = "legend-swatch";
-        swatch.style.background = entry.color;
-
-        const name = document.createElement("span");
-        name.textContent = entry.name;
-
-        title.append(swatch, name);
-
-        const price = document.createElement("div");
-        price.className = "legend-price";
-
-        const latestPoint = entry.points[entry.points.length - 1];
-        if (latestPoint && getViewMode() === "price") {
-          price.textContent = formatActualPrice(latestPoint.value);
-        } else if (latestPoint) {
-          price.textContent = formatValue(latestPoint.value, getViewMode());
-        } else {
-          price.textContent = "–";
-        }
-
-        item.append(title, price);
-        legendContainer.appendChild(item);
-      });
     }
 
     function requestRender() {
       if (renderTimer) clearTimeout(renderTimer);
-      renderTimer = setTimeout(() => renderChart(), 50);
+      renderTimer = setTimeout(renderChart, 100);
     }
 
-    async function fetchData() {
-      if (fetchInProgress) return;
-      fetchInProgress = true;
-
-      try {
-        setStatus(
-          "Laden: data/commodities_transformed.json wird heruntergeladen..."
-        );
-        const response = await fetch("data/commodities_transformed.json");
-        if (!response.ok) {
-          setStatus(
-            `Fehler beim Laden der Daten: HTTP ${response.status}`
-          );
-          fetchInProgress = false;
-          return;
-        }
-
-        const data = await response.json();
-        setStatus("Daten erfolgreich geladen. Verarbeitung läuft...");
-
-        dataset = data;
-        buildControls();
-        setStatus("Bereit zum Verwenden.");
-        renderChart();
-      } catch (error) {
-        setStatus(`Fehler beim Laden der Daten: ${error.message}`);
-      } finally {
-        fetchInProgress = false;
-      }
-    }
-
-    function initializeEventListeners() {
-      const periodButtons = document.querySelectorAll(".period-button");
-      periodButtons.forEach((button) => {
+    function initEventListeners() {
+      // Period buttons
+      document.querySelectorAll(".period-button").forEach((button) => {
         button.addEventListener("click", () => {
           displayRangeKey = button.dataset.range;
           updatePeriodButtons();
@@ -1148,102 +1077,105 @@
         });
       });
 
-      const viewModeInputs = document.querySelectorAll('input[name="view-mode"]');
-      viewModeInputs.forEach((input) => {
-        input.addEventListener("change", () => {
+      // View mode change
+      document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
+        radio.addEventListener("change", () => {
           updateBasisButton();
           requestRender();
         });
       });
 
-      const defaultSelectionButton = document.getElementById("default-selection");
-      const selectAllButton = document.getElementById("select-all");
-      const clearAllButton = document.getElementById("clear-all");
-      const basisButton = document.getElementById("basis-button");
-
-      if (defaultSelectionButton) {
-        defaultSelectionButton.addEventListener("click", () => {
-          setCheckedTickers(DEFAULT_TICKERS);
-          requestRender();
-        });
-      }
-
-      if (selectAllButton) {
-        selectAllButton.addEventListener("click", () => {
-          setCheckedTickers(ALL_COMMODITIES.map((item) => item.ticker));
-          requestRender();
-        });
-      }
-
-      if (clearAllButton) {
-        clearAllButton.addEventListener("click", () => {
-          setCheckedTickers([]);
-          requestRender();
-        });
-      }
-
-      if (basisButton) {
-        basisButton.addEventListener("click", () => {
-          document.getElementById("basis-dialog").showModal();
-        });
-      }
-
-      const basisCancelButton = document.getElementById("basis-cancel");
-      const basisApplyButton = document.getElementById("basis-apply");
-
-      if (basisCancelButton) {
-        basisCancelButton.addEventListener("click", () => {
-          document.getElementById("basis-dialog").close();
-        });
-      }
-
-      if (basisApplyButton) {
-        basisApplyButton.addEventListener("click", () => {
-          const selected = document.querySelector('input[name="basis-choice"]:checked');
-          if (selected) {
-            indexBasisKey = selected.value;
-            if (indexBasisKey === "custom") {
-              customBasisDate = document.getElementById("custom-basis-date").value;
-            }
+      // Basis button
+      document.getElementById("basis-button").addEventListener("click", () => {
+        const dialog = document.getElementById("basis-dialog");
+        const choice = document.querySelector('input[name="basis-choice"]:checked');
+        if (choice) {
+          document.querySelector(`input[name="basis-choice"][value="${choice.value}"]`).checked = true;
+          if (choice.value === "custom") {
+            document.getElementById("custom-basis-date").value = customBasisDate;
           }
-          updateBasisButton();
-          requestRender();
-          document.getElementById("basis-dialog").close();
-        });
-      }
+        }
+        dialog.showModal();
+      });
 
-      const customBasisDateInput = document.getElementById("custom-basis-date");
-      if (customBasisDateInput) {
-        customBasisDateInput.addEventListener("change", () => {
+      document.getElementById("basis-apply").addEventListener("click", () => {
+        const choice = document.querySelector('input[name="basis-choice"]:checked');
+        if (choice) {
+          indexBasisKey = choice.value;
           if (indexBasisKey === "custom") {
-            customBasisDate = customBasisDateInput.value;
+            customBasisDate = document.getElementById("custom-basis-date").value;
           }
-        });
-      }
-
-      resizeObserver = new ResizeObserver(() => {
-        if (chart) {
-          chart.applyOptions({ width: undefined });
+          updateBasisButton();
+          requestRender();
         }
       });
 
-      const chartElement = document.getElementById("chart");
-      if (chartElement) {
-        resizeObserver.observe(chartElement);
-      }
+      document.getElementById("basis-cancel").addEventListener("click", () => {
+        document.getElementById("basis-dialog").close();
+      });
 
-      setInterval(() => {
-        if (document.visibilityState === "visible") {
-          fetchData();
-        }
-      }, AUTO_REFRESH_MS);
+      // Selection buttons
+      document.getElementById("default-selection").addEventListener("click", () => {
+        setCheckedTickers(DEFAULT_TICKERS);
+        requestRender();
+      });
+
+      document.getElementById("select-all").addEventListener("click", () => {
+        setCheckedTickers(ALL_COMMODITIES.map((c) => c.ticker));
+        requestRender();
+      });
+
+      document.getElementById("clear-all").addEventListener("click", () => {
+        setCheckedTickers([]);
+        requestRender();
+      });
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
-      buildControls();
-      initializeEventListeners();
-      fetchData();
-      updateBasisButton();
+    async function loadData() {
+      if (fetchInProgress) return;
+      fetchInProgress = true;
+      setStatus("Laden: data/commodities_transformed.json wird heruntergeladen...");
+
+      try {
+        const response = await fetch("data/commodities_transformed.json");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        dataset = await response.json();
+
+        if (!dataset?.series || !Array.isArray(dataset.series)) {
+          throw new Error("Invalid data format");
+        }
+
+        setStatus("");
+        buildControls();
+        renderChart();
+      } catch (error) {
+        setStatus(`Fehler beim Laden: ${error.message}`);
+        console.error(error);
+      } finally {
+        fetchInProgress = false;
+      }
+    }
+
+    function setupResizeObserver() {
+      const chartContainer = document.querySelector(".chart-shell");
+      resizeObserver = new ResizeObserver(() => {
+        if (chart) {
+          setTimeout(() => {
+            if (chart) chart.applyOptions({ width: chartContainer.clientWidth });
+          }, 0);
+        }
+      });
+      resizeObserver.observe(chartContainer);
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initEventListeners();
+      setupResizeObserver();
+      loadData();
+
+      setInterval(() => {
+        if (!fetchInProgress) loadData();
+      }, AUTO_REFRESH_MS);
     });
   </script>
 </body>
