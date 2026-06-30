@@ -35,6 +35,19 @@ def find_closest_date(date_target: str, available_dates: list[str]) -> str | Non
     return matching[-1] if matching else None
 
 
+def weekly_closes(data: list[list[object]]) -> list[list[object]]:
+    """Return the last available close in every ISO calendar week."""
+    weeks: dict[tuple[int, int], list[object]] = {}
+    for date_str, price in data:
+        value = float(price)
+        if value <= 0:
+            continue
+        date = datetime.strptime(str(date_str), "%Y-%m-%d")
+        iso_year, iso_week, _ = date.isocalendar()
+        weeks[(iso_year, iso_week)] = [str(date_str), round(value, 8)]
+    return list(weeks.values())
+
+
 def transform_series(series: dict[str, Any], latest_date: str) -> dict[str, Any]:
     """
     Transform a single series to include metadata for dynamic indexing.
@@ -54,6 +67,7 @@ def transform_series(series: dict[str, Any], latest_date: str) -> dict[str, Any]
             **series,
             "first_price": None,
             "base_dates": {},
+            "weekly_data": [],
         }
     
     # Extract dates
@@ -65,6 +79,7 @@ def transform_series(series: dict[str, Any], latest_date: str) -> dict[str, Any]
             **series,
             "first_price": None,
             "base_dates": {},
+            "weekly_data": [],
         }
     
     # Find first valid price
@@ -81,6 +96,7 @@ def transform_series(series: dict[str, Any], latest_date: str) -> dict[str, Any]
             **series,
             "first_price": None,
             "base_dates": {},
+            "weekly_data": [],
         }
     
     # Compute target dates for common basis points
@@ -95,6 +111,7 @@ def transform_series(series: dict[str, Any], latest_date: str) -> dict[str, Any]
         **series,
         "first_price": round(first_price, 8),
         "base_dates": base_dates,
+        "weekly_data": weekly_closes(data),
     }
 
 

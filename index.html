@@ -217,15 +217,6 @@
       font-size: 10px;
     }
 
-    .commodity-percentile {
-      flex: 0 0 70px;
-      padding: 3px 5px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 800;
-      text-align: center;
-    }
-
     .status {
       margin-top: 10px;
       color: var(--muted);
@@ -358,13 +349,6 @@
     .tooltip-subvalue {
       color: var(--muted);
       font-size: 10px;
-    }
-
-    .legend-stats {
-      padding-left: 19px;
-      color: var(--muted);
-      font-size: 9px;
-      line-height: 1.35;
     }
 
     .correlation-wrap {
@@ -648,9 +632,9 @@
 
   <dialog id="correlation-dialog">
     <div class="dialog-body">
-      <h2 class="dialog-title">Korrelation der Tagesrenditen</h2>
+      <h2 class="dialog-title">Korrelation der Wochenrenditen</h2>
       <p class="dialog-subtitle">
-        Pearson-Korrelation auf gemeinsamen Handelstagen der ausgewählten Reihen.
+        Pearson-Korrelation der Wochenrenditen auf gemeinsamen Kalenderwochen.
       </p>
       <div id="correlation-content" class="correlation-wrap"></div>
       <div class="dialog-actions">
@@ -732,13 +716,75 @@
 
     const ALL_COMMODITIES = Object.values(COMMODITY_GROUPS).flat();
     const AUTO_REFRESH_MS = 60 * 1000;
-    const MARKET_EVENTS = [
-      { date: "2008-09-15", label: "Finanzkrise", color: "#dc2626" },
-      { date: "2020-03-11", label: "COVID-19", color: "#7c3aed" },
-      { date: "2022-02-24", label: "Ukrainekrieg", color: "#ea580c" },
-      { date: "2022-07-21", label: "EZB-Zinswende", color: "#2563eb" },
-      { date: "2023-03-10", label: "Bankenkrise", color: "#be123c" }
-    ];
+    const GROUP_EVENTS = {
+      "Energy": [
+        { date: "2008-09-15", label: "Finanzkrise", color: "#dc2626" },
+        { date: "2020-03-11", label: "COVID-Nachfrageschock", color: "#7c3aed" },
+        { date: "2022-02-24", label: "Ukrainekrieg", color: "#ea580c" }
+      ],
+      "Metals": [
+        { date: "2008-09-15", label: "Finanzkrise", color: "#dc2626" },
+        { date: "2020-03-11", label: "COVID-19", color: "#7c3aed" },
+        { date: "2022-02-24", label: "Ukrainekrieg", color: "#ea580c" }
+      ],
+      "Grains / Oilseeds": [
+        { date: "2008-04-01", label: "Nahrungsmittelkrise", color: "#b45309" },
+        { date: "2012-07-01", label: "US-Dürre", color: "#dc2626" },
+        { date: "2022-02-24", label: "Ukrainekrieg", color: "#ea580c" }
+      ],
+      "Softs": [
+        { date: "2008-09-15", label: "Finanzkrise", color: "#dc2626" },
+        { date: "2020-03-11", label: "COVID-19", color: "#7c3aed" }
+      ],
+      "Livestock": [
+        { date: "2003-12-23", label: "BSE-Fall USA", color: "#dc2626" },
+        { date: "2020-04-01", label: "Schlachthofkrise", color: "#7c3aed" }
+      ],
+      "CO₂ Certificates": [
+        { date: "2021-07-14", label: "Fit for 55", color: "#16a34a" },
+        { date: "2022-02-24", label: "Energiekrise", color: "#ea580c" },
+        { date: "2023-04-18", label: "EU-ETS-Reform", color: "#2563eb" }
+      ]
+    };
+
+    const TICKER_EVENTS = {
+      "CL=F": [
+        { date: "2014-11-27", label: "OPEC hält Förderung", color: "#b45309" },
+        { date: "2020-04-20", label: "WTI unter 0", color: "#dc2626" }
+      ],
+      "BZ=F": [
+        { date: "2014-11-27", label: "Ölpreisverfall", color: "#b45309" },
+        { date: "2022-03-08", label: "Brent-Spike", color: "#dc2626" }
+      ],
+      "NG=F": [
+        { date: "2005-08-29", label: "Hurrikan Katrina", color: "#dc2626" },
+        { date: "2021-09-01", label: "Gaskrise Europa", color: "#ea580c" },
+        { date: "2022-06-08", label: "Freeport-LNG-Ausfall", color: "#7c3aed" },
+        { date: "2026-01-28", label: "Kälte-Spike 2026", color: "#2563eb" }
+      ],
+      "GC=F": [
+        { date: "2011-09-06", label: "Eurokrise / Goldhoch", color: "#b45309" },
+        { date: "2020-08-06", label: "Pandemie-Goldhoch", color: "#7c3aed" }
+      ],
+      "HG=F": [
+        { date: "2021-05-10", label: "Kupfer-Boom", color: "#dc2626" }
+      ],
+      "ZC=F": [
+        { date: "2012-08-10", label: "Mais-Dürrehoch", color: "#dc2626" }
+      ],
+      "ZW=F": [
+        { date: "2022-03-07", label: "Weizen-Spike", color: "#dc2626" }
+      ],
+      "KC=F": [
+        { date: "2024-04-01", label: "Robusta-Knappheit", color: "#b45309" }
+      ],
+      "CC=F": [
+        { date: "2024-04-19", label: "Kakaokrise", color: "#dc2626" }
+      ],
+      "OJ=F": [
+        { date: "2023-09-01", label: "Citrus-Greening", color: "#ea580c" }
+      ]
+    };
 
     let dataset = null;
     let chart = null;
@@ -1057,37 +1103,6 @@
       return data.length ? Number(data[data.length - 1][1]) : NaN;
     }
 
-    function getPricePercentile(series) {
-      const prices = (series.data || [])
-        .map((point) => Number(point[1]))
-        .filter((value) => Number.isFinite(value) && value > 0)
-        .sort((a, b) => a - b);
-      if (!prices.length) return NaN;
-      if (prices.length === 1) return 50;
-
-      const latest = getLatestActualPrice(series);
-      if (!Number.isFinite(latest) || latest <= 0) return NaN;
-      const firstIndex = prices.findIndex((value) => value >= latest);
-      let lastIndex = prices.length - 1;
-      for (let index = prices.length - 1; index >= 0; index -= 1) {
-        if (prices[index] <= latest) {
-          lastIndex = index;
-          break;
-        }
-      }
-      const averageRank = (Math.max(0, firstIndex) + lastIndex) / 2;
-      return (averageRank / (prices.length - 1)) * 100;
-    }
-
-    function getPercentileColors(percentile) {
-      const bounded = Math.max(0, Math.min(100, percentile));
-      const hue = 120 - (bounded * 1.2);
-      return {
-        background: `hsl(${hue} 72% 82%)`,
-        text: `hsl(${hue} 72% 24%)`
-      };
-    }
-
     function getHistoricalStats(series) {
       const points = (series.data || [])
         .map(([date, value]) => ({ date, value: Number(value) }))
@@ -1099,12 +1114,9 @@
       const low = points.reduce((best, point) =>
         point.value < best.value ? point : best
       );
-      const current = points[points.length - 1].value;
       return {
         high,
-        low,
-        fromHigh: ((current / high.value) - 1) * 100,
-        fromLow: ((current / low.value) - 1) * 100
+        low
       };
     }
 
@@ -1119,17 +1131,12 @@
       const change = previous
         ? ((point.value / previous.value) - 1) * 100
         : NaN;
-      const sorted = points.map((item) => item.value).sort((a, b) => a - b);
-      const rank = sorted.findIndex((value) => value >= point.value);
-      const percentile = sorted.length > 1
-        ? (rank / (sorted.length - 1)) * 100
-        : 50;
-      return { price: point.value, change, percentile };
+      return { price: point.value, change };
     }
 
     function getDailyReturns(series) {
       const returns = new Map();
-      const data = series.data || [];
+      const data = series.weekly_data || [];
       for (let index = 1; index < data.length; index += 1) {
         const previous = Number(data[index - 1][1]);
         const current = Number(data[index][1]);
@@ -1254,31 +1261,8 @@
           ticker.className = "ticker";
           ticker.textContent = ` (${commodity.ticker})`;
 
-          const series = dataset?.series?.find(
-            (item) => item.ticker === commodity.ticker
-          );
-          const percentile = series ? getPricePercentile(series) : NaN;
-          const percentileBadge = document.createElement("span");
-          percentileBadge.className = "commodity-percentile";
-          if (Number.isFinite(percentile)) {
-            const colors = getPercentileColors(percentile);
-            percentileBadge.textContent = `${percentile.toLocaleString("de-DE", {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1
-            })} %`;
-            percentileBadge.style.background = colors.background;
-            percentileBadge.style.color = colors.text;
-            percentileBadge.title =
-              `Aktuelles Preisperzentil: ${percentileBadge.textContent}`;
-          } else {
-            percentileBadge.textContent = "–";
-            percentileBadge.style.background = "#f1f5f9";
-            percentileBadge.style.color = "#64748b";
-            percentileBadge.title = "Keine Kursdaten verfügbar";
-          }
-
           name.appendChild(ticker);
-          label.append(checkbox, name, percentileBadge);
+          label.append(checkbox, name);
           list.appendChild(label);
         });
 
@@ -1336,9 +1320,6 @@
           const change = metrics && Number.isFinite(metrics.change)
             ? `${metrics.change >= 0 ? "+" : ""}${metrics.change.toFixed(2)} %`
             : "–";
-          const percentile = metrics
-            ? `${metrics.percentile.toFixed(1)} %`
-            : "–";
           return `
             <div class="tooltip-row">
               <div class="tooltip-name">
@@ -1348,7 +1329,7 @@
               <div class="tooltip-values">
                 <div>${metrics ? formatActualPrice(metrics.price) : "–"}</div>
                 <div class="tooltip-subvalue">
-                  Tag: ${change} · Perzentil: ${percentile}
+                  Tagesveränderung: ${change}
                 </div>
               </div>
             </div>
@@ -1396,23 +1377,29 @@
         lineSeries.setData(points);
         const stats = getHistoricalStats(series);
         const markers = [];
-        if (stats) {
-          markers.push(
-            {
-              time: stats.high.date,
-              position: "aboveBar",
+        if (selectedSeries.length === 1 && stats) {
+          const highPoint = points.find((point) => point.time === stats.high.date);
+          const lowPoint = points.find((point) => point.time === stats.low.date);
+          if (highPoint) {
+            lineSeries.createPriceLine({
+              price: highPoint.value,
               color: "#dc2626",
-              shape: "arrowDown",
-              text: "Hoch"
-            },
-            {
-              time: stats.low.date,
-              position: "belowBar",
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: true,
+              title: "Historisches Hoch"
+            });
+          }
+          if (lowPoint) {
+            lineSeries.createPriceLine({
+              price: lowPoint.value,
               color: "#16a34a",
-              shape: "arrowUp",
-              text: "Tief"
-            }
-          );
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: true,
+              title: "Historisches Tief"
+            });
+          }
         }
 
         const legendItem = document.createElement("div");
@@ -1430,14 +1417,6 @@
               · ${formatQuoteTimestamp(series)}
             </span>
           </div>
-          ${stats ? `
-            <div class="legend-stats">
-              Hoch ${formatActualPrice(stats.high.value)}
-              (${stats.fromHigh.toFixed(1)} % Abstand) ·
-              Tief ${formatActualPrice(stats.low.value)}
-              (+${stats.fromLow.toFixed(1)} %)
-            </div>
-          ` : ""}
         `;
         legend.appendChild(legendItem);
 
@@ -1451,19 +1430,24 @@
         };
       });
 
-      if (showEvents && seriesEntries.length) {
-        const firstPoints = seriesEntries[0].points;
-        MARKET_EVENTS.forEach((event) => {
-          const point = firstPoints.find((item) => item.time >= event.date);
-          if (point) {
-            seriesEntries[0].markers.push({
-              time: point.time,
-              position: "aboveBar",
-              color: event.color,
-              shape: "circle",
-              text: event.label
-            });
-          }
+      if (showEvents) {
+        seriesEntries.forEach((entry) => {
+          const events = [
+            ...(GROUP_EVENTS[entry.series.group] || []),
+            ...(TICKER_EVENTS[entry.series.ticker] || [])
+          ];
+          events.forEach((event) => {
+            const point = entry.points.find((item) => item.time >= event.date);
+            if (point) {
+              entry.markers.push({
+                time: point.time,
+                position: "aboveBar",
+                color: event.color,
+                shape: "circle",
+                text: event.label
+              });
+            }
+          });
         });
       }
 
