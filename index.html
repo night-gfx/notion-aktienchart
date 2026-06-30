@@ -255,7 +255,7 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
-      min-width: 86px;
+      min-width: 190px;
       padding: 3px 5px;
       border-radius: 4px;
       background: rgba(255, 255, 255, 0.90);
@@ -281,10 +281,12 @@
     }
 
     .legend-timestamp {
+      display: inline-block;
       margin-left: 4px;
       color: var(--muted);
       font-size: 10px;
       font-weight: 400;
+      white-space: nowrap;
     }
 
     .tooltip {
@@ -734,11 +736,19 @@
       if (series.last_quote_at) {
         const timestamp = new Date(series.last_quote_at);
         if (!Number.isNaN(timestamp.getTime())) {
-          return new Intl.DateTimeFormat("de-DE", {
-            dateStyle: "short",
-            timeStyle: "short",
+          const date = new Intl.DateTimeFormat("de-DE", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
             timeZone: "Europe/Berlin"
           }).format(timestamp);
+          const time = new Intl.DateTimeFormat("de-DE", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            timeZone: "Europe/Berlin"
+          }).format(timestamp);
+          return `${date} · ${time} Uhr`;
         }
       }
 
@@ -1184,7 +1194,7 @@
           <div class="legend-price">
             ${formatValue(latestPrice, viewMode)}
             <span class="legend-timestamp">
-              · ${formatQuoteTimestamp(series)} Uhr
+              · ${formatQuoteTimestamp(series)}
             </span>
           </div>
         `;
