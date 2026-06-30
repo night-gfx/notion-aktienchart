@@ -1658,7 +1658,9 @@
       setStatus("Laden: data/commodities_transformed.json wird heruntergeladen...");
 
       try {
-        const response = await fetch("data/commodities_transformed.json");
+        const dataUrl = new URL("data/commodities_transformed.json", window.location.href);
+        dataUrl.searchParams.set("v", Date.now().toString());
+        const response = await fetch(dataUrl, { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         dataset = await response.json();
 
