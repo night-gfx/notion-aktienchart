@@ -959,6 +959,15 @@
 
     function buildControls() {
       const root = document.getElementById("commodity-groups");
+      const existingCheckboxes = Array.from(
+        root.querySelectorAll(".commodity-checkbox")
+      );
+      const preserveSelection = existingCheckboxes.length > 0;
+      const selectedTickers = new Set(
+        existingCheckboxes
+          .filter((checkbox) => checkbox.checked)
+          .map((checkbox) => checkbox.value)
+      );
       root.innerHTML = "";
 
       Object.entries(COMMODITY_GROUPS).forEach(([groupName, commodities]) => {
@@ -970,11 +979,16 @@
         const groupButton = document.createElement("button");
         groupButton.type = "button";
         groupButton.textContent = groupName;
-        groupButton.title = `Alle Rohstoffe aus ${groupName} auswählen`;
+        groupButton.title =
+          `Alle Rohstoffe aus ${groupName} auswählen oder abwählen`;
         groupButton.addEventListener("click", () => {
           const tickers = new Set(commodities.map((item) => item.ticker));
-          document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
-            if (tickers.has(checkbox.value)) checkbox.checked = true;
+          const checkboxes = Array.from(
+            document.querySelectorAll(".commodity-checkbox")
+          ).filter((checkbox) => tickers.has(checkbox.value));
+          const allSelected = checkboxes.every((checkbox) => checkbox.checked);
+          checkboxes.forEach((checkbox) => {
+            checkbox.checked = !allSelected;
           });
           requestRender();
         });
@@ -992,7 +1006,9 @@
           checkbox.type = "checkbox";
           checkbox.className = "commodity-checkbox";
           checkbox.value = commodity.ticker;
-          checkbox.checked = DEFAULT_TICKERS.includes(commodity.ticker);
+          checkbox.checked = preserveSelection
+            ? selectedTickers.has(commodity.ticker)
+            : DEFAULT_TICKERS.includes(commodity.ticker);
           checkbox.addEventListener("change", requestRender);
 
           const name = document.createElement("span");
@@ -1104,6 +1120,12 @@
     function renderChart() {
       if (!dataset) return;
 
+      const legend = document.getElementById("legend");
+      legend.innerHTML = "";
+      const tooltip = document.getElementById("tooltip");
+      tooltip.innerHTML = "";
+      tooltip.style.display = "none";
+
       const selectedSeries = getSelectedSeries();
       if (selectedSeries.length === 0) {
         resetChart();
@@ -1119,9 +1141,6 @@
       const displayStartDate = getDisplayStartDate(latestDate);
       const basisTargetDate = getBasisTargetDate(selectedSeries, latestDate, displayStartDate);
       const viewMode = getViewMode();
-
-      const legend = document.getElementById("legend");
-      legend.innerHTML = "";
 
       seriesEntries = selectedSeries.map((series) => {
         const points = getSeriesPoints(series, viewMode, basisTargetDate);
