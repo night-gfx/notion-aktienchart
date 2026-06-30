@@ -667,7 +667,10 @@
       "Energy": [
         { ticker: "CL=F", name: "WTI Crude", nameDe: "WTI-Rohöl" },
         { ticker: "BZ=F", name: "Brent Crude", nameDe: "Brent-Rohöl" },
-        { ticker: "NG=F", name: "Natural Gas", nameDe: "Erdgas" },
+        { ticker: "NG=F", name: "Henry Hub Natural Gas (USA)", nameDe: "Erdgas" },
+        { ticker: "TTF=F", name: "Dutch TTF Natural Gas (Europa)", nameDe: "Erdgas" },
+        { ticker: "UKG=F", name: "UK Natural Gas (Großbritannien)", nameDe: "Erdgas" },
+        { ticker: "JKM=F", name: "JKM LNG (Nordostasien)", nameDe: "Flüssigerdgas" },
         { ticker: "RB=F", name: "RBOB Gasoline", nameDe: "RBOB-Benzin" },
         { ticker: "HO=F", name: "Heating Oil", nameDe: "Heizöl" }
       ],
@@ -710,6 +713,7 @@
 
     const COLOR_BY_TICKER = {
       "CL=F": "#003f5c", "BZ=F": "#ef5675", "NG=F": "#2f4b7c",
+      "TTF=F": "#2563eb", "UKG=F": "#7c3aed", "JKM=F": "#0891b2",
       "RB=F": "#ffa600", "HO=F": "#7a5195",
       "GC=F": "#c99700", "SI=F": "#6b7280", "HG=F": "#d04a02",
       "PL=F": "#5d9cec", "PA=F": "#a42cd6", "ALI=F": "#00a6a6",
@@ -791,6 +795,25 @@
         { date: "2024-11-08", label: "Henry-Hub-Allzeittief", color: "#16a34a" },
         { date: "2026-01-22", label: "Arktische Kälte 2026", color: "#2563eb" },
         { date: "2026-01-28", label: "Futures-Spike 2026", color: "#dc2626" }
+      ],
+      "TTF=F": [
+        { date: "2021-09-01", label: "Europäische Gaskrise", color: "#ea580c" },
+        { date: "2022-02-24", label: "Ukrainekrieg", color: "#dc2626" },
+        { date: "2022-08-26", label: "TTF-Rekordhoch", color: "#dc2626" },
+        { date: "2022-09-26", label: "Nord-Stream-Schäden", color: "#7c3aed" },
+        { date: "2023-03-31", label: "Hohe EU-Speicher", color: "#16a34a" }
+      ],
+      "UKG=F": [
+        { date: "2021-09-01", label: "Britische Gaskrise", color: "#ea580c" },
+        { date: "2022-02-24", label: "Ukrainekrieg", color: "#dc2626" },
+        { date: "2022-08-26", label: "NBP-Preisspitze", color: "#dc2626" },
+        { date: "2023-03-31", label: "Europäische Speichererholung", color: "#16a34a" }
+      ],
+      "JKM=F": [
+        { date: "2021-01-08", label: "Asiatischer LNG-Kälteschock", color: "#2563eb" },
+        { date: "2021-10-06", label: "Globale LNG-Knappheit", color: "#ea580c" },
+        { date: "2022-02-24", label: "Ukrainekrieg / LNG-Umlenkung", color: "#dc2626" },
+        { date: "2022-08-26", label: "Globales LNG-Hoch", color: "#dc2626" }
       ],
       "GC=F": [
         { date: "2011-09-06", label: "Eurokrise / Goldhoch", color: "#b45309" },

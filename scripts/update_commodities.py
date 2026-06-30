@@ -21,7 +21,10 @@ COMMODITIES: dict[str, list[dict[str, str]]] = {
     "Energy": [
         {"ticker": "CL=F", "name": "WTI Crude"},
         {"ticker": "BZ=F", "name": "Brent Crude"},
-        {"ticker": "NG=F", "name": "Natural Gas"},
+        {"ticker": "NG=F", "name": "Henry Hub Natural Gas (USA)"},
+        {"ticker": "TTF=F", "name": "Dutch TTF Natural Gas (Europe)"},
+        {"ticker": "UKG=F", "name": "UK Natural Gas (United Kingdom)"},
+        {"ticker": "JKM=F", "name": "JKM LNG (Northeast Asia)"},
         {"ticker": "RB=F", "name": "RBOB Gasoline"},
         {"ticker": "HO=F", "name": "Heating Oil"},
     ],
@@ -119,12 +122,19 @@ def download(
             if values:
                 metadata = instrument.history_metadata
                 market_timestamp = metadata.get("regularMarketTime")
-                last_quote_at = (
-                    datetime.fromtimestamp(
-                        int(market_timestamp),
-                        timezone.utc,
-                    ).isoformat()
+                quote_datetime = (
+                    datetime.fromtimestamp(int(market_timestamp), timezone.utc)
                     if market_timestamp
+                    else None
+                )
+                last_data_date = datetime.strptime(
+                    str(values[-1][0]),
+                    "%Y-%m-%d",
+                ).date()
+                last_quote_at = (
+                    quote_datetime.isoformat()
+                    if quote_datetime
+                    and abs((quote_datetime.date() - last_data_date).days) <= 2
                     else None
                 )
                 exchange_timezone = metadata.get("exchangeTimezoneName")
