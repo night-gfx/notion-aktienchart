@@ -217,6 +217,15 @@
       font-size: 10px;
     }
 
+    .commodity-percentile {
+      flex: 0 0 70px;
+      padding: 3px 5px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
+    }
+
     .status {
       margin-top: 10px;
       color: var(--muted);
@@ -556,7 +565,6 @@
       <section class="chart-shell">
         <div id="chart"></div>
         <div id="legend" class="legend"></div>
-        <div id="tooltip" class="tooltip"></div>
         <div class="chart-tools">
           <button id="fullscreen-toggle" type="button">Vollbild</button>
         </div>
@@ -757,10 +765,32 @@
         { date: "2022-03-08", label: "Brent-Spike", color: "#dc2626" }
       ],
       "NG=F": [
+        { date: "2000-12-01", label: "Kalifornien-Energiekrise", color: "#dc2626" },
+        { date: "2003-02-25", label: "Arktischer Kälteschock", color: "#2563eb" },
+        { date: "2004-09-16", label: "Hurrikan Ivan", color: "#7c3aed" },
         { date: "2005-08-29", label: "Hurrikan Katrina", color: "#dc2626" },
-        { date: "2021-09-01", label: "Gaskrise Europa", color: "#ea580c" },
-        { date: "2022-06-08", label: "Freeport-LNG-Ausfall", color: "#7c3aed" },
-        { date: "2026-01-28", label: "Kälte-Spike 2026", color: "#2563eb" }
+        { date: "2005-09-24", label: "Hurrikan Rita", color: "#ea580c" },
+        { date: "2008-07-03", label: "Rohstoffpreis-Hoch", color: "#dc2626" },
+        { date: "2008-09-15", label: "Finanzkrise", color: "#be123c" },
+        { date: "2009-01-01", label: "Schiefergas-Boom", color: "#16a34a" },
+        { date: "2012-04-19", label: "Schiefergas / Speicherhoch", color: "#16a34a" },
+        { date: "2014-01-27", label: "Polar Vortex", color: "#2563eb" },
+        { date: "2016-02-24", label: "Erster Sabine-Pass-LNG-Export", color: "#16a34a" },
+        { date: "2018-01-04", label: "US-Kältewelle", color: "#2563eb" },
+        { date: "2018-11-14", label: "Kälte + niedrige Speicher", color: "#ea580c" },
+        { date: "2020-06-01", label: "COVID-Nachfragetief", color: "#7c3aed" },
+        { date: "2021-02-17", label: "Wintersturm Uri", color: "#dc2626" },
+        { date: "2021-09-01", label: "Globale Gaskrise", color: "#ea580c" },
+        { date: "2022-02-24", label: "Ukrainekrieg", color: "#dc2626" },
+        { date: "2022-06-08", label: "Freeport-LNG-Brand", color: "#7c3aed" },
+        { date: "2022-08-22", label: "Henry-Hub-Hoch 2022", color: "#dc2626" },
+        { date: "2022-12-23", label: "Wintersturm Elliott", color: "#2563eb" },
+        { date: "2023-01-26", label: "Freeport-Wiederanlauf", color: "#16a34a" },
+        { date: "2024-01-15", label: "Wintersturm Heather", color: "#2563eb" },
+        { date: "2024-03-01", label: "Rekordtief / volle Speicher", color: "#16a34a" },
+        { date: "2024-11-08", label: "Henry-Hub-Allzeittief", color: "#16a34a" },
+        { date: "2026-01-22", label: "Arktische Kälte 2026", color: "#2563eb" },
+        { date: "2026-01-28", label: "Futures-Spike 2026", color: "#dc2626" }
       ],
       "GC=F": [
         { date: "2011-09-06", label: "Eurokrise / Goldhoch", color: "#b45309" },
@@ -1120,36 +1150,63 @@
       };
     }
 
-    function getPointMetrics(series, date) {
-      const points = (series.data || [])
-        .map(([time, value]) => ({ time, value: Number(value) }))
-        .filter((point) => Number.isFinite(point.value) && point.value > 0);
-      const index = points.findIndex((point) => point.time === date);
-      if (index < 0) return null;
-      const point = points[index];
-      const previous = index > 0 ? points[index - 1] : null;
-      const change = previous
-        ? ((point.value / previous.value) - 1) * 100
-        : NaN;
-      return { price: point.value, change };
+    function getPricePercentile(series) {
+      const prices = (series.data || [])
+        .map((point) => Number(point[1]))
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .sort((a, b) => a - b);
+      if (!prices.length) return NaN;
+      if (prices.length === 1) return 50;
+      const latest = getLatestActualPrice(series);
+      if (!Number.isFinite(latest) || latest <= 0) return NaN;
+      const lower = prices.findIndex((value) => value >= latest);
+      let upper = prices.length - 1;
+      for (let index = prices.length - 1; index >= 0; index -= 1) {
+        if (prices[index] <= latest) {
+          upper = index;
+          break;
+        }
+      }
+      return (((Math.max(0, lower) + upper) / 2) / (prices.length - 1)) * 100;
     }
 
-    function getDailyReturns(series) {
+    function getPercentileColors(percentile) {
+      const bounded = Math.max(0, Math.min(100, percentile));
+      const hue = 120 - (bounded * 1.2);
+      return {
+        background: `hsl(${hue} 72% 82%)`,
+        text: `hsl(${hue} 72% 24%)`
+      };
+    }
+
+    function getIsoWeekKey(dateString) {
+      const date = new Date(`${dateString}T12:00:00Z`);
+      const day = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+      return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+    }
+
+    function getWeeklyReturns(series) {
       const returns = new Map();
       const data = series.weekly_data || [];
       for (let index = 1; index < data.length; index += 1) {
         const previous = Number(data[index - 1][1]);
         const current = Number(data[index][1]);
         if (previous > 0 && current > 0) {
-          returns.set(data[index][0], Math.log(current / previous));
+          returns.set(
+            getIsoWeekKey(data[index][0]),
+            Math.log(current / previous)
+          );
         }
       }
       return returns;
     }
 
     function pearsonCorrelation(leftSeries, rightSeries) {
-      const left = getDailyReturns(leftSeries);
-      const right = getDailyReturns(rightSeries);
+      const left = getWeeklyReturns(leftSeries);
+      const right = getWeeklyReturns(rightSeries);
       const pairs = [];
       left.forEach((value, date) => {
         if (right.has(date)) pairs.push([value, right.get(date)]);
@@ -1261,8 +1318,28 @@
           ticker.className = "ticker";
           ticker.textContent = ` (${commodity.ticker})`;
 
+          const series = dataset?.series?.find(
+            (item) => item.ticker === commodity.ticker
+          );
+          const percentile = series ? getPricePercentile(series) : NaN;
+          const percentileBadge = document.createElement("span");
+          percentileBadge.className = "commodity-percentile";
+          if (Number.isFinite(percentile)) {
+            const colors = getPercentileColors(percentile);
+            percentileBadge.textContent = `${percentile.toLocaleString("de-DE", {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1
+            })} %`;
+            percentileBadge.style.background = colors.background;
+            percentileBadge.style.color = colors.text;
+          } else {
+            percentileBadge.textContent = "–";
+            percentileBadge.style.background = "#f1f5f9";
+            percentileBadge.style.color = "#64748b";
+          }
+
           name.appendChild(ticker);
-          label.append(checkbox, name);
+          label.append(checkbox, name, percentileBadge);
           list.appendChild(label);
         });
 
@@ -1302,56 +1379,11 @@
       });
     }
 
-    function syncTooltip(param) {
-      const tooltip = document.getElementById("tooltip");
-      if (param.point === undefined || !param.time) {
-        tooltip.style.display = "none";
-        return;
-      }
-
-      const rows = seriesEntries
-        .filter((entry) => entry.api)
-        .map((entry) => {
-          const data = entry.points || (entry.api && typeof entry.api.data === 'function' ? entry.api.data() : []);
-          const point = data.find((p) => p.time === param.time);
-          if (!point) return "";
-
-          const metrics = getPointMetrics(entry.series, param.time);
-          const change = metrics && Number.isFinite(metrics.change)
-            ? `${metrics.change >= 0 ? "+" : ""}${metrics.change.toFixed(2)} %`
-            : "–";
-          return `
-            <div class="tooltip-row">
-              <div class="tooltip-name">
-                <div class="tooltip-dot" style="background: ${entry.color}"></div>
-                ${entry.name}
-              </div>
-              <div class="tooltip-values">
-                <div>${metrics ? formatActualPrice(metrics.price) : "–"}</div>
-                <div class="tooltip-subvalue">
-                  Tagesveränderung: ${change}
-                </div>
-              </div>
-            </div>
-          `;
-        })
-        .filter(Boolean);
-
-      tooltip.innerHTML = `
-        <div class="tooltip-date">${formatDate(param.time)}</div>
-        ${rows.join("")}
-      `;
-      tooltip.style.display = "block";
-    }
-
     function renderChart() {
       if (!dataset) return;
 
       const legend = document.getElementById("legend");
       legend.innerHTML = "";
-      const tooltip = document.getElementById("tooltip");
-      tooltip.innerHTML = "";
-      tooltip.style.display = "none";
 
       const selectedSeries = getSelectedSeries();
       if (selectedSeries.length === 0) {
@@ -1432,10 +1464,12 @@
 
       if (showEvents) {
         seriesEntries.forEach((entry) => {
-          const events = [
-            ...(GROUP_EVENTS[entry.series.group] || []),
-            ...(TICKER_EVENTS[entry.series.ticker] || [])
-          ];
+          const events = entry.series.ticker === "NG=F"
+            ? TICKER_EVENTS["NG=F"]
+            : [
+                ...(GROUP_EVENTS[entry.series.group] || []),
+                ...(TICKER_EVENTS[entry.series.ticker] || [])
+              ];
           events.forEach((event) => {
             const point = entry.points.find((item) => item.time >= event.date);
             if (point) {
@@ -1457,7 +1491,6 @@
         }
       });
 
-      chart.subscribeCrosshairMove(syncTooltip);
       chart.subscribeClick((param) => {
         if (!comparisonPickMode || !param.time) return;
         customBasisDate = param.time;
