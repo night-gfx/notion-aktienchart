@@ -55,6 +55,9 @@ COMMODITIES: dict[str, list[dict[str, str]]] = {
         {"ticker": "HE=F", "name": "Lean Hogs"},
         {"ticker": "GF=F", "name": "Feeder Cattle"},
     ],
+    "CO₂ Certificates": [
+        {"ticker": "^ICEEUA", "name": "EU Carbon Allowances"},
+    ],
 }
 
 
