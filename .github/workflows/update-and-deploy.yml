@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
   pages: write
   id-token: write
 
@@ -44,6 +45,11 @@ jobs:
       
       - name: Transform data for dynamic indexing
         run: python scripts/transform_series.py
+
+      - name: Check open GitHub price alerts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/check_price_alerts.py
 
       - name: Commit refreshed data when changed
         run: |

@@ -850,9 +850,9 @@
     let comparisonPickMode = false;
     let alarmPickMode = false;
     let showEvents = false;
-    let alarmCheckTimer = null;
 
     const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
+    const GITHUB_REPOSITORY = "night-gfx/notion-aktienchart";
 
     let displayRangeKey = "all";
     let indexBasisKey = "display-start";
@@ -907,56 +907,31 @@
       clearButton.disabled = !alarm;
     }
 
-    function showAlarmNotification(title, body) {
-      setStatus(`${title}: ${body}`);
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(title, { body });
-      }
+    function getGitHubAlarmUrl(series, alarm) {
+      const directionLabel = alarm.direction === "above"
+        ? "steigt auf oder über"
+        : "fällt auf oder unter";
+      const title = `Preisalarm: ${series.ticker} ${directionLabel} ${formatActualPrice(alarm.price)}`;
+      const body = [
+        "<!-- commodity-price-alert -->",
+        "",
+        "Dieser Issue wird automatisch stündlich zwischen 08:00 und 24:00 Uhr geprüft.",
+        "",
+        `Ticker: ${series.ticker}`,
+        `Rohstoff: ${getDisplayName(series.ticker, series.name)}`,
+        `Zielpreis: ${alarm.price}`,
+        `Richtung: ${alarm.direction}`,
+        `Erstellt: ${alarm.createdAt}`,
+        "",
+        "Zum Löschen des Preisalarms diesen Issue einfach schließen."
+      ].join("\n");
+      const params = new URLSearchParams({ title, body });
+      return `https://github.com/${GITHUB_REPOSITORY}/issues/new?${params}`;
     }
 
-    async function checkPriceAlarms() {
-      const hour = new Date().getHours();
-      if (hour < 8 || hour >= 24) return;
-
-      const alarms = loadPriceAlarms();
-      if (!Object.keys(alarms).length) return;
-
-      try {
-        const dataUrl = new URL("data/commodities_transformed.json", window.location.href);
-        dataUrl.searchParams.set("alarm-check", Date.now().toString());
-        const response = await fetch(dataUrl, { cache: "no-store" });
-        if (!response.ok) return;
-        const freshDataset = await response.json();
-        dataset = freshDataset;
-
-        Object.entries(alarms).forEach(([ticker, alarm]) => {
-          const series = freshDataset.series?.find((item) => item.ticker === ticker);
-          const currentPrice = series ? getLatestActualPrice(series) : NaN;
-          if (!Number.isFinite(currentPrice) || alarm.triggered) return;
-          const reached = alarm.direction === "above"
-            ? currentPrice >= alarm.price
-            : currentPrice <= alarm.price;
-          if (!reached) return;
-
-          alarm.triggered = true;
-          alarm.triggeredAt = new Date().toISOString();
-          showAlarmNotification(
-            `Preisalarm: ${getDisplayName(ticker, ticker)}`,
-            `${formatActualPrice(currentPrice)} hat ${formatActualPrice(alarm.price)} erreicht.`
-          );
-        });
-
-        savePriceAlarms(alarms);
-        requestRender();
-      } catch (error) {
-        console.warn("Preisalarm konnte nicht geprüft werden.", error);
-      }
-    }
-
-    function startAlarmRoutine() {
-      if (alarmCheckTimer) window.clearInterval(alarmCheckTimer);
-      checkPriceAlarms();
-      alarmCheckTimer = window.setInterval(checkPriceAlarms, 60 * 60 * 1000);
+    function getGitHubAlarmSearchUrl(ticker) {
+      const query = `is:issue is:open in:body "Ticker: ${ticker}" "commodity-price-alert"`;
+      return `https://github.com/${GITHUB_REPOSITORY}/issues?q=${encodeURIComponent(query)}`;
     }
 
     function getViewMode() {
@@ -1624,17 +1599,18 @@
           if (Number.isFinite(alarmPrice) && alarmPrice > 0) {
             const currentPrice = getLatestActualPrice(entry.series);
             const alarms = loadPriceAlarms();
-            alarms[entry.series.ticker] = {
+            const alarm = {
               price: alarmPrice,
               direction: alarmPrice >= currentPrice ? "above" : "below",
               createdAt: new Date().toISOString(),
               triggered: false
             };
+            alarms[entry.series.ticker] = alarm;
             savePriceAlarms(alarms);
             alarmPickMode = false;
+            window.open(getGitHubAlarmUrl(entry.series, alarm), "_blank", "noopener");
             setStatus(
-              `Preisalarm für ${getDisplayName(entry.series.ticker, entry.series.name)} bei `
-              + `${formatActualPrice(alarmPrice)} gespeichert.`
+              `Preisalarm vorbereitet. Im geöffneten GitHub-Fenster bitte „Submit new issue“ drücken.`
             );
             requestRender();
           }
@@ -1736,7 +1712,7 @@
           : "Vergleichspunkt wählen";
       });
 
-      document.getElementById("set-price-alarm").addEventListener("click", async () => {
+      document.getElementById("set-price-alarm").addEventListener("click", () => {
         const selected = getSelectedSeries();
         if (selected.length !== 1) {
           setStatus("Ein Preisalarm ist nur bei genau einem ausgewählten Rohstoff möglich.");
@@ -1749,10 +1725,6 @@
         document.querySelector('input[name="view-mode"][value="price"]').checked = true;
         updateBasisButton();
         alarmPickMode = !alarmPickMode;
-        if (alarmPickMode && "Notification" in window
-            && Notification.permission === "default") {
-          await Notification.requestPermission();
-        }
         updateAlarmButtons();
         requestRender();
       });
@@ -1764,7 +1736,8 @@
         delete alarms[selected[0].ticker];
         savePriceAlarms(alarms);
         alarmPickMode = false;
-        setStatus(`Preisalarm für ${getDisplayName(selected[0].ticker, selected[0].name)} gelöscht.`);
+        window.open(getGitHubAlarmSearchUrl(selected[0].ticker), "_blank", "noopener");
+        setStatus("Lokale Alarm-Linie gelöscht. Den offenen Alarm-Issue auf GitHub bitte schließen.");
         requestRender();
       });
 
@@ -1830,7 +1803,6 @@
         setStatus("");
         buildControls();
         renderChart();
-        startAlarmRoutine();
       } catch (error) {
         setStatus(`Fehler beim Laden: ${error.message}`);
         console.error(error);
