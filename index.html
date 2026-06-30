@@ -83,6 +83,13 @@
 
     .primary:hover { background: var(--primary-hover); }
 
+    button.active-tool {
+      border-color: #2563eb;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+
     .control-label {
       display: inline-flex;
       align-items: center;
@@ -233,6 +240,29 @@
       background: #ffffff;
     }
 
+    .chart-tools {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 9;
+    }
+
+    .chart-tools button {
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .app.fullscreen-mode .controls,
+    .app.fullscreen-mode .commodity-sidebar {
+      display: none;
+    }
+
+    .app.fullscreen-mode {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: #ffffff;
+    }
+
     #chart {
       width: 100%;
       height: 100%;
@@ -318,6 +348,46 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
+    }
+
+    .tooltip-values {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .tooltip-subvalue {
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .legend-stats {
+      padding-left: 19px;
+      color: var(--muted);
+      font-size: 9px;
+      line-height: 1.35;
+    }
+
+    .correlation-wrap {
+      overflow: auto;
+      max-height: 55vh;
+    }
+
+    .correlation-table {
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    .correlation-table th,
+    .correlation-table td {
+      min-width: 62px;
+      padding: 6px;
+      border: 1px solid #e2e8f0;
+      text-align: center;
+    }
+
+    .correlation-table th {
+      position: sticky;
+      background: #f8fafc;
     }
 
     .tooltip-name {
@@ -486,6 +556,9 @@
         <button id="basis-button" class="basis-button" type="button">
           Indexbasis: Anzeige-Start
         </button>
+        <button id="comparison-point" type="button">Vergleichspunkt wählen</button>
+        <button id="toggle-events" type="button">Ereignisse</button>
+        <button id="show-correlation" type="button">Korrelation</button>
       </div>
 
       <div id="status" class="status">Laden: data/commodities_transformed.json wird heruntergeladen...</div>
@@ -500,6 +573,9 @@
         <div id="chart"></div>
         <div id="legend" class="legend"></div>
         <div id="tooltip" class="tooltip"></div>
+        <div class="chart-tools">
+          <button id="fullscreen-toggle" type="button">Vollbild</button>
+        </div>
 
         <div class="attribution">
           Charts by
@@ -568,6 +644,19 @@
         <button id="basis-apply" class="primary" type="button">Übernehmen</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="correlation-dialog">
+    <div class="dialog-body">
+      <h2 class="dialog-title">Korrelation der Tagesrenditen</h2>
+      <p class="dialog-subtitle">
+        Pearson-Korrelation auf gemeinsamen Handelstagen der ausgewählten Reihen.
+      </p>
+      <div id="correlation-content" class="correlation-wrap"></div>
+      <div class="dialog-actions">
+        <button id="correlation-close" type="button">Schließen</button>
+      </div>
+    </div>
   </dialog>
 
   <script>
@@ -643,6 +732,13 @@
 
     const ALL_COMMODITIES = Object.values(COMMODITY_GROUPS).flat();
     const AUTO_REFRESH_MS = 60 * 1000;
+    const MARKET_EVENTS = [
+      { date: "2008-09-15", label: "Finanzkrise", color: "#dc2626" },
+      { date: "2020-03-11", label: "COVID-19", color: "#7c3aed" },
+      { date: "2022-02-24", label: "Ukrainekrieg", color: "#ea580c" },
+      { date: "2022-07-21", label: "EZB-Zinswende", color: "#2563eb" },
+      { date: "2023-03-10", label: "Bankenkrise", color: "#be123c" }
+    ];
 
     let dataset = null;
     let chart = null;
@@ -650,6 +746,8 @@
     let resizeObserver = null;
     let fetchInProgress = false;
     let renderTimer = null;
+    let comparisonPickMode = false;
+    let showEvents = false;
 
     let displayRangeKey = "all";
     let indexBasisKey = "display-start";
@@ -990,6 +1088,110 @@
       };
     }
 
+    function getHistoricalStats(series) {
+      const points = (series.data || [])
+        .map(([date, value]) => ({ date, value: Number(value) }))
+        .filter((point) => Number.isFinite(point.value) && point.value > 0);
+      if (!points.length) return null;
+      const high = points.reduce((best, point) =>
+        point.value > best.value ? point : best
+      );
+      const low = points.reduce((best, point) =>
+        point.value < best.value ? point : best
+      );
+      const current = points[points.length - 1].value;
+      return {
+        high,
+        low,
+        fromHigh: ((current / high.value) - 1) * 100,
+        fromLow: ((current / low.value) - 1) * 100
+      };
+    }
+
+    function getPointMetrics(series, date) {
+      const points = (series.data || [])
+        .map(([time, value]) => ({ time, value: Number(value) }))
+        .filter((point) => Number.isFinite(point.value) && point.value > 0);
+      const index = points.findIndex((point) => point.time === date);
+      if (index < 0) return null;
+      const point = points[index];
+      const previous = index > 0 ? points[index - 1] : null;
+      const change = previous
+        ? ((point.value / previous.value) - 1) * 100
+        : NaN;
+      const sorted = points.map((item) => item.value).sort((a, b) => a - b);
+      const rank = sorted.findIndex((value) => value >= point.value);
+      const percentile = sorted.length > 1
+        ? (rank / (sorted.length - 1)) * 100
+        : 50;
+      return { price: point.value, change, percentile };
+    }
+
+    function getDailyReturns(series) {
+      const returns = new Map();
+      const data = series.data || [];
+      for (let index = 1; index < data.length; index += 1) {
+        const previous = Number(data[index - 1][1]);
+        const current = Number(data[index][1]);
+        if (previous > 0 && current > 0) {
+          returns.set(data[index][0], Math.log(current / previous));
+        }
+      }
+      return returns;
+    }
+
+    function pearsonCorrelation(leftSeries, rightSeries) {
+      const left = getDailyReturns(leftSeries);
+      const right = getDailyReturns(rightSeries);
+      const pairs = [];
+      left.forEach((value, date) => {
+        if (right.has(date)) pairs.push([value, right.get(date)]);
+      });
+      if (pairs.length < 3) return NaN;
+      const meanLeft = pairs.reduce((sum, pair) => sum + pair[0], 0) / pairs.length;
+      const meanRight = pairs.reduce((sum, pair) => sum + pair[1], 0) / pairs.length;
+      let covariance = 0;
+      let varianceLeft = 0;
+      let varianceRight = 0;
+      pairs.forEach(([leftValue, rightValue]) => {
+        const leftDelta = leftValue - meanLeft;
+        const rightDelta = rightValue - meanRight;
+        covariance += leftDelta * rightDelta;
+        varianceLeft += leftDelta ** 2;
+        varianceRight += rightDelta ** 2;
+      });
+      const denominator = Math.sqrt(varianceLeft * varianceRight);
+      return denominator ? covariance / denominator : NaN;
+    }
+
+    function showCorrelationDialog() {
+      const selected = getSelectedSeries();
+      const content = document.getElementById("correlation-content");
+      if (selected.length < 2) {
+        content.innerHTML = "<p>Bitte mindestens zwei Rohstoffe auswählen.</p>";
+      } else {
+        const shortName = (series) =>
+          getCommodityDefinition(series.ticker)?.nameDe || series.ticker;
+        const header = selected
+          .map((series) => `<th>${shortName(series)}</th>`)
+          .join("");
+        const rows = selected.map((left) => {
+          const cells = selected.map((right) => {
+            const value = left === right ? 1 : pearsonCorrelation(left, right);
+            const hue = Number.isFinite(value)
+              ? (value + 1) * 60
+              : 0;
+            const text = Number.isFinite(value) ? value.toFixed(2) : "–";
+            return `<td style="background:hsl(${hue} 65% 86%)">${text}</td>`;
+          }).join("");
+          return `<tr><th>${shortName(left)}</th>${cells}</tr>`;
+        }).join("");
+        content.innerHTML =
+          `<table class="correlation-table"><thead><tr><th></th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+      }
+      document.getElementById("correlation-dialog").showModal();
+    }
+
     function buildControls() {
       const root = document.getElementById("commodity-groups");
       const existingCheckboxes = Array.from(
@@ -1130,14 +1332,25 @@
           const point = data.find((p) => p.time === param.time);
           if (!point) return "";
 
-          const value = formatValue(point.value, getViewMode());
+          const metrics = getPointMetrics(entry.series, param.time);
+          const change = metrics && Number.isFinite(metrics.change)
+            ? `${metrics.change >= 0 ? "+" : ""}${metrics.change.toFixed(2)} %`
+            : "–";
+          const percentile = metrics
+            ? `${metrics.percentile.toFixed(1)} %`
+            : "–";
           return `
             <div class="tooltip-row">
               <div class="tooltip-name">
                 <div class="tooltip-dot" style="background: ${entry.color}"></div>
                 ${entry.name}
               </div>
-              <div>${value}</div>
+              <div class="tooltip-values">
+                <div>${metrics ? formatActualPrice(metrics.price) : "–"}</div>
+                <div class="tooltip-subvalue">
+                  Tag: ${change} · Perzentil: ${percentile}
+                </div>
+              </div>
             </div>
           `;
         })
@@ -1181,6 +1394,26 @@
           color: getColor(series.ticker)
         });
         lineSeries.setData(points);
+        const stats = getHistoricalStats(series);
+        const markers = [];
+        if (stats) {
+          markers.push(
+            {
+              time: stats.high.date,
+              position: "aboveBar",
+              color: "#dc2626",
+              shape: "arrowDown",
+              text: "Hoch"
+            },
+            {
+              time: stats.low.date,
+              position: "belowBar",
+              color: "#16a34a",
+              shape: "arrowUp",
+              text: "Tief"
+            }
+          );
+        }
 
         const legendItem = document.createElement("div");
         legendItem.className = "legend-item";
@@ -1197,6 +1430,14 @@
               · ${formatQuoteTimestamp(series)}
             </span>
           </div>
+          ${stats ? `
+            <div class="legend-stats">
+              Hoch ${formatActualPrice(stats.high.value)}
+              (${stats.fromHigh.toFixed(1)} % Abstand) ·
+              Tief ${formatActualPrice(stats.low.value)}
+              (+${stats.fromLow.toFixed(1)} %)
+            </div>
+          ` : ""}
         `;
         legend.appendChild(legendItem);
 
@@ -1204,11 +1445,47 @@
           api: lineSeries,
           points,
           color: getColor(series.ticker),
-          name: getDisplayName(series.ticker, series.name)
+          name: getDisplayName(series.ticker, series.name),
+          series,
+          markers
         };
       });
 
+      if (showEvents && seriesEntries.length) {
+        const firstPoints = seriesEntries[0].points;
+        MARKET_EVENTS.forEach((event) => {
+          const point = firstPoints.find((item) => item.time >= event.date);
+          if (point) {
+            seriesEntries[0].markers.push({
+              time: point.time,
+              position: "aboveBar",
+              color: event.color,
+              shape: "circle",
+              text: event.label
+            });
+          }
+        });
+      }
+
+      seriesEntries.forEach((entry) => {
+        if (window.LightweightCharts.createSeriesMarkers) {
+          window.LightweightCharts.createSeriesMarkers(entry.api, entry.markers);
+        }
+      });
+
       chart.subscribeCrosshairMove(syncTooltip);
+      chart.subscribeClick((param) => {
+        if (!comparisonPickMode || !param.time) return;
+        customBasisDate = param.time;
+        indexBasisKey = "custom";
+        comparisonPickMode = false;
+        document.querySelector('input[name="view-mode"][value="indexed"]').checked = true;
+        const button = document.getElementById("comparison-point");
+        button.classList.remove("active-tool");
+        button.textContent = `Vergleich: ${formatDate(param.time)}`;
+        updateBasisButton();
+        requestRender();
+      });
 
       const timeline = getTimeline(selectedSeries);
       const logicalRange = getLogicalDisplayRange(timeline, displayStartDate);
@@ -1281,6 +1558,57 @@
       document.getElementById("clear-all").addEventListener("click", () => {
         setCheckedTickers([]);
         requestRender();
+      });
+
+      document.getElementById("comparison-point").addEventListener("click", () => {
+        comparisonPickMode = !comparisonPickMode;
+        const button = document.getElementById("comparison-point");
+        button.classList.toggle("active-tool", comparisonPickMode);
+        button.textContent = comparisonPickMode
+          ? "Jetzt Datum im Chart anklicken"
+          : "Vergleichspunkt wählen";
+      });
+
+      document.getElementById("toggle-events").addEventListener("click", () => {
+        showEvents = !showEvents;
+        document.getElementById("toggle-events")
+          .classList.toggle("active-tool", showEvents);
+        requestRender();
+      });
+
+      document.getElementById("show-correlation")
+        .addEventListener("click", showCorrelationDialog);
+      document.getElementById("correlation-close").addEventListener("click", () => {
+        document.getElementById("correlation-dialog").close();
+      });
+
+      document.getElementById("fullscreen-toggle").addEventListener("click", async () => {
+        const app = document.querySelector(".app");
+        const entering = !app.classList.contains("fullscreen-mode");
+        app.classList.toggle("fullscreen-mode", entering);
+        document.getElementById("fullscreen-toggle").textContent =
+          entering ? "Vollbild beenden" : "Vollbild";
+        if (entering && document.documentElement.requestFullscreen) {
+          try {
+            await document.documentElement.requestFullscreen();
+          } catch (error) {
+            // CSS fullscreen remains available when browser fullscreen is blocked.
+          }
+        } else if (!entering && document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+        window.setTimeout(() => {
+          if (chart) chart.applyOptions({
+            width: document.querySelector(".chart-shell").clientWidth
+          });
+        }, 50);
+      });
+
+      document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement) {
+          document.querySelector(".app").classList.remove("fullscreen-mode");
+          document.getElementById("fullscreen-toggle").textContent = "Vollbild";
+        }
       });
     }
 
