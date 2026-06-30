@@ -280,6 +280,13 @@
       font-weight: 700;
     }
 
+    .legend-timestamp {
+      margin-left: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 400;
+    }
+
     .tooltip {
       position: absolute;
       top: 64px;
@@ -723,6 +730,22 @@
       return value.toLocaleString("de-DE", { maximumSignificantDigits: 7 });
     }
 
+    function formatQuoteTimestamp(series) {
+      if (series.last_quote_at) {
+        const timestamp = new Date(series.last_quote_at);
+        if (!Number.isNaN(timestamp.getTime())) {
+          return new Intl.DateTimeFormat("de-DE", {
+            dateStyle: "short",
+            timeStyle: "short",
+            timeZone: "Europe/Berlin"
+          }).format(timestamp);
+        }
+      }
+
+      const data = series.data || [];
+      return data.length ? formatDate(data[data.length - 1][0]) : "–";
+    }
+
     function subtractYears(dateString, years) {
       const [year, month, day] = dateString.split("-").map(Number);
       const date = new Date(Date.UTC(year - years, month - 1, day));
@@ -1158,7 +1181,12 @@
             <div class="legend-swatch" style="background: ${getColor(series.ticker)}"></div>
             <strong>${getDisplayName(series.ticker, series.name)}</strong>
           </div>
-          <div class="legend-price">${formatValue(latestPrice, viewMode)}</div>
+          <div class="legend-price">
+            ${formatValue(latestPrice, viewMode)}
+            <span class="legend-timestamp">
+              · ${formatQuoteTimestamp(series)} Uhr
+            </span>
+          </div>
         `;
         legend.appendChild(legendItem);
 

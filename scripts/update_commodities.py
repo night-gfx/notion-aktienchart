@@ -99,12 +99,16 @@ def daily_points(history: pd.DataFrame) -> list[list[object]]:
         if pd.notna(value) and float(value) > 0
     ]
 
-def download(ticker: str, attempts: int = 3) -> list[list[object]]:
+def download(
+    ticker: str,
+    attempts: int = 3,
+) -> tuple[list[list[object]], str | None, str | None]:
     last_error: Exception | None = None
 
     for attempt in range(1, attempts + 1):
         try:
-            history = yf.Ticker(ticker).history(
+            instrument = yf.Ticker(ticker)
+            history = instrument.history(
                 period="max",
                 interval="1d",
                 auto_adjust=False,
@@ -113,7 +117,18 @@ def download(ticker: str, attempts: int = 3) -> list[list[object]]:
 
             values = daily_points(history)
             if values:
-                return values
+                metadata = instrument.history_metadata
+                market_timestamp = metadata.get("regularMarketTime")
+                last_quote_at = (
+                    datetime.fromtimestamp(
+                        int(market_timestamp),
+                        timezone.utc,
+                    ).isoformat()
+                    if market_timestamp
+                    else None
+                )
+                exchange_timezone = metadata.get("exchangeTimezoneName")
+                return values, last_quote_at, exchange_timezone
 
             raise RuntimeError("No usable close prices returned.")
 
@@ -137,12 +152,14 @@ def main() -> None:
             ticker = instrument["ticker"]
 
             try:
-                data = download(ticker)
+                data, last_quote_at, exchange_timezone = download(ticker)
                 series.append({
                     "ticker": ticker,
                     "name": instrument["name"],
                     "group": group,
                     "data": data,
+                    "last_quote_at": last_quote_at,
+                    "exchange_timezone": exchange_timezone,
                 })
                 print(f"Downloaded {ticker}: {len(data)} observations")
 
