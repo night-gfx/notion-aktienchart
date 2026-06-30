@@ -41,8 +41,6 @@
 
     .controls {
       flex: 0 0 auto;
-      max-height: 410px;
-      overflow-y: auto;
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
@@ -140,8 +138,22 @@
 
     .groups {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+      grid-template-columns: 1fr;
       gap: 9px;
+    }
+
+    .workspace {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .commodity-sidebar {
+      flex: 0 0 clamp(300px, 31vw, 430px);
+      overflow-y: auto;
+      padding: 10px;
+      border-right: 1px solid var(--border);
+      background: var(--panel);
     }
 
     .commodity-group {
@@ -152,23 +164,21 @@
     }
 
     .group-title {
-      margin: 0;
+      margin: 0 0 8px;
+    }
+
+    .group-title button {
+      width: 100%;
+      min-height: 29px;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 800;
+      text-align: left;
     }
 
-    .group-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin: 8px 0;
-    }
-
-    .group-actions button {
-      min-height: 25px;
-      padding: 3px 7px;
-      font-size: 11px;
-    }
+    .group-title button:hover { background: #dbeafe; }
 
     .commodity-list {
       display: grid;
@@ -190,9 +200,23 @@
 
     .commodity-item:hover { background: #f0f4f8; }
 
+    .commodity-name {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
     .ticker {
       color: var(--muted);
       font-size: 10px;
+    }
+
+    .commodity-percentile {
+      flex: 0 0 70px;
+      padding: 3px 5px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
     }
 
     .status {
@@ -402,8 +426,12 @@
     }
 
     @media (max-width: 700px) {
-      .controls { max-height: 500px; }
-      .groups { grid-template-columns: 1fr; }
+      .workspace { flex-direction: column; }
+      .commodity-sidebar {
+        flex: 0 0 280px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
       .legend { right: 8px; }
     }
   </style>
@@ -451,23 +479,28 @@
         </button>
       </div>
 
-      <div id="commodity-groups" class="groups"></div>
       <div id="status" class="status">Laden: data/commodities_transformed.json wird heruntergeladen...</div>
     </section>
 
-    <section class="chart-shell">
-      <div id="chart"></div>
-      <div id="legend" class="legend"></div>
-      <div id="tooltip" class="tooltip"></div>
+    <div class="workspace">
+      <aside class="commodity-sidebar" aria-label="Rohstoffauswahl">
+        <div id="commodity-groups" class="groups"></div>
+      </aside>
 
-      <div class="attribution">
-        Charts by
-        <a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">
-          TradingView
-        </a>
-        · Lightweight Charts™
-      </div>
-    </section>
+      <section class="chart-shell">
+        <div id="chart"></div>
+        <div id="legend" class="legend"></div>
+        <div id="tooltip" class="tooltip"></div>
+
+        <div class="attribution">
+          Charts by
+          <a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">
+            TradingView
+          </a>
+          · Lightweight Charts™
+        </div>
+      </section>
+    </div>
   </main>
 
   <dialog id="basis-dialog">
@@ -542,44 +575,44 @@
 
     const COMMODITY_GROUPS = {
       "Energy": [
-        { ticker: "CL=F", name: "WTI Crude" },
-        { ticker: "BZ=F", name: "Brent Crude" },
-        { ticker: "NG=F", name: "Natural Gas" },
-        { ticker: "RB=F", name: "RBOB Gasoline" },
-        { ticker: "HO=F", name: "Heating Oil" }
+        { ticker: "CL=F", name: "WTI Crude", nameDe: "WTI-Rohöl" },
+        { ticker: "BZ=F", name: "Brent Crude", nameDe: "Brent-Rohöl" },
+        { ticker: "NG=F", name: "Natural Gas", nameDe: "Erdgas" },
+        { ticker: "RB=F", name: "RBOB Gasoline", nameDe: "RBOB-Benzin" },
+        { ticker: "HO=F", name: "Heating Oil", nameDe: "Heizöl" }
       ],
       "Metals": [
-        { ticker: "GC=F", name: "Gold" },
-        { ticker: "SI=F", name: "Silver" },
-        { ticker: "HG=F", name: "Copper" },
-        { ticker: "PL=F", name: "Platinum" },
-        { ticker: "PA=F", name: "Palladium" },
-        { ticker: "ALI=F", name: "Aluminum" }
+        { ticker: "GC=F", name: "Gold", nameDe: "Gold" },
+        { ticker: "SI=F", name: "Silver", nameDe: "Silber" },
+        { ticker: "HG=F", name: "Copper", nameDe: "Kupfer" },
+        { ticker: "PL=F", name: "Platinum", nameDe: "Platin" },
+        { ticker: "PA=F", name: "Palladium", nameDe: "Palladium" },
+        { ticker: "ALI=F", name: "Aluminum", nameDe: "Aluminium" }
       ],
       "Grains / Oilseeds": [
-        { ticker: "ZC=F", name: "Corn" },
-        { ticker: "ZW=F", name: "Wheat" },
-        { ticker: "KE=F", name: "KC HRW Wheat" },
-        { ticker: "ZS=F", name: "Soybeans" },
-        { ticker: "ZL=F", name: "Soybean Oil" },
-        { ticker: "ZM=F", name: "Soybean Meal" },
-        { ticker: "ZO=F", name: "Oats" },
-        { ticker: "ZR=F", name: "Rough Rice" }
+        { ticker: "ZC=F", name: "Corn", nameDe: "Mais" },
+        { ticker: "ZW=F", name: "Wheat", nameDe: "Weizen" },
+        { ticker: "KE=F", name: "KC HRW Wheat", nameDe: "KC-HRW-Weizen" },
+        { ticker: "ZS=F", name: "Soybeans", nameDe: "Sojabohnen" },
+        { ticker: "ZL=F", name: "Soybean Oil", nameDe: "Sojaöl" },
+        { ticker: "ZM=F", name: "Soybean Meal", nameDe: "Sojaschrot" },
+        { ticker: "ZO=F", name: "Oats", nameDe: "Hafer" },
+        { ticker: "ZR=F", name: "Rough Rice", nameDe: "Rohreis" }
       ],
       "Softs": [
-        { ticker: "KC=F", name: "Coffee" },
-        { ticker: "SB=F", name: "Sugar" },
-        { ticker: "CC=F", name: "Cocoa" },
-        { ticker: "CT=F", name: "Cotton" },
-        { ticker: "OJ=F", name: "Orange Juice" }
+        { ticker: "KC=F", name: "Coffee", nameDe: "Kaffee" },
+        { ticker: "SB=F", name: "Sugar", nameDe: "Zucker" },
+        { ticker: "CC=F", name: "Cocoa", nameDe: "Kakao" },
+        { ticker: "CT=F", name: "Cotton", nameDe: "Baumwolle" },
+        { ticker: "OJ=F", name: "Orange Juice", nameDe: "Orangensaft" }
       ],
       "Livestock": [
-        { ticker: "LE=F", name: "Live Cattle" },
-        { ticker: "HE=F", name: "Lean Hogs" },
-        { ticker: "GF=F", name: "Feeder Cattle" }
+        { ticker: "LE=F", name: "Live Cattle", nameDe: "Lebendrinder" },
+        { ticker: "HE=F", name: "Lean Hogs", nameDe: "Magerschweine" },
+        { ticker: "GF=F", name: "Feeder Cattle", nameDe: "Mastrinder" }
       ],
       "CO₂ Certificates": [
-        { ticker: "^ICEEUA", name: "EU Carbon Allowances" }
+        { ticker: "CO2.L", name: "Physical Carbon EUA", nameDe: "EU-Emissionszertifikate" }
       ]
     };
 
@@ -596,7 +629,7 @@
       "KC=F": "#6f4e37", "SB=F": "#e76f51", "CC=F": "#5f0f40",
       "CT=F": "#4d908e", "OJ=F": "#f77f00",
       "LE=F": "#9b2226", "HE=F": "#bb3e03", "GF=F": "#495057",
-      "^ICEEUA": "#16a34a"
+      "CO2.L": "#16a34a"
     };
 
     const ALL_COMMODITIES = Object.values(COMMODITY_GROUPS).flat();
@@ -615,6 +648,17 @@
 
     function getColor(ticker) {
       return COLOR_BY_TICKER[ticker] || "#1d4ed8";
+    }
+
+    function getCommodityDefinition(ticker) {
+      return ALL_COMMODITIES.find((commodity) => commodity.ticker === ticker);
+    }
+
+    function getDisplayName(ticker, fallbackName = ticker) {
+      const commodity = getCommodityDefinition(ticker);
+      if (!commodity) return fallbackName;
+      if (!commodity.nameDe) return commodity.name;
+      return `${commodity.name} (${commodity.nameDe})`;
     }
 
     function setStatus(text) {
@@ -844,8 +888,8 @@
         return null;
       }
       if (!displayStartDate) {
-        // Show all data
-        return { from: -0.5, to: timeline.length + 0.5 };
+        // Let the chart fit the complete time scale natively.
+        return null;
       }
       const firstVisibleIndex = timeline.findIndex(
         (time) => time >= displayStartDate
@@ -882,6 +926,37 @@
       return data.length ? Number(data[data.length - 1][1]) : NaN;
     }
 
+    function getPricePercentile(series) {
+      const prices = (series.data || [])
+        .map((point) => Number(point[1]))
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .sort((a, b) => a - b);
+      if (!prices.length) return NaN;
+      if (prices.length === 1) return 50;
+
+      const latest = getLatestActualPrice(series);
+      if (!Number.isFinite(latest) || latest <= 0) return NaN;
+      const firstIndex = prices.findIndex((value) => value >= latest);
+      let lastIndex = prices.length - 1;
+      for (let index = prices.length - 1; index >= 0; index -= 1) {
+        if (prices[index] <= latest) {
+          lastIndex = index;
+          break;
+        }
+      }
+      const averageRank = (Math.max(0, firstIndex) + lastIndex) / 2;
+      return (averageRank / (prices.length - 1)) * 100;
+    }
+
+    function getPercentileColors(percentile) {
+      const bounded = Math.max(0, Math.min(100, percentile));
+      const hue = 120 - (bounded * 1.2);
+      return {
+        background: `hsl(${hue} 72% 82%)`,
+        text: `hsl(${hue} 72% 24%)`
+      };
+    }
+
     function buildControls() {
       const root = document.getElementById("commodity-groups");
       root.innerHTML = "";
@@ -892,35 +967,18 @@
 
         const title = document.createElement("h3");
         title.className = "group-title";
-        title.textContent = groupName;
-
-        const actions = document.createElement("div");
-        actions.className = "group-actions";
-
-        const onlyButton = document.createElement("button");
-        onlyButton.type = "button";
-        onlyButton.textContent = "Nur diese Gruppe";
-        onlyButton.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setCheckedTickers(commodities.map((item) => item.ticker));
-          requestRender();
-        });
-
-        const addButton = document.createElement("button");
-        addButton.type = "button";
-        addButton.textContent = "Gruppe ergänzen";
-        addButton.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
+        const groupButton = document.createElement("button");
+        groupButton.type = "button";
+        groupButton.textContent = groupName;
+        groupButton.title = `Alle Rohstoffe aus ${groupName} auswählen`;
+        groupButton.addEventListener("click", () => {
           const tickers = new Set(commodities.map((item) => item.ticker));
           document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
             if (tickers.has(checkbox.value)) checkbox.checked = true;
           });
           requestRender();
         });
-
-        actions.append(onlyButton, addButton);
+        title.appendChild(groupButton);
 
         const list = document.createElement("div");
         list.className = "commodity-list";
@@ -938,18 +996,42 @@
           checkbox.addEventListener("change", requestRender);
 
           const name = document.createElement("span");
-          name.textContent = commodity.name;
+          name.className = "commodity-name";
+          name.textContent = getDisplayName(commodity.ticker, commodity.name);
 
           const ticker = document.createElement("span");
           ticker.className = "ticker";
           ticker.textContent = ` (${commodity.ticker})`;
 
+          const series = dataset?.series?.find(
+            (item) => item.ticker === commodity.ticker
+          );
+          const percentile = series ? getPricePercentile(series) : NaN;
+          const percentileBadge = document.createElement("span");
+          percentileBadge.className = "commodity-percentile";
+          if (Number.isFinite(percentile)) {
+            const colors = getPercentileColors(percentile);
+            percentileBadge.textContent = `${percentile.toLocaleString("de-DE", {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1
+            })} %`;
+            percentileBadge.style.background = colors.background;
+            percentileBadge.style.color = colors.text;
+            percentileBadge.title =
+              `Aktuelles Preisperzentil: ${percentileBadge.textContent}`;
+          } else {
+            percentileBadge.textContent = "–";
+            percentileBadge.style.background = "#f1f5f9";
+            percentileBadge.style.color = "#64748b";
+            percentileBadge.title = "Keine Kursdaten verfügbar";
+          }
+
           name.appendChild(ticker);
-          label.append(checkbox, name);
+          label.append(checkbox, name, percentileBadge);
           list.appendChild(label);
         });
 
-        group.append(title, actions, list);
+        group.append(title, list);
         root.appendChild(group);
       });
     }
@@ -971,7 +1053,17 @@
       chartElement.innerHTML = "";
       chart = window.LightweightCharts.createChart(chartElement, {
         layout: { background: { color: "#ffffff" } },
-        timeScale: { timeVisible: true, secondsVisible: false }
+        grid: {
+          vertLines: { visible: false },
+          horzLines: { visible: false }
+        },
+        rightPriceScale: { borderVisible: false },
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+          borderVisible: false,
+          minBarSpacing: 0.01
+        }
       });
     }
 
@@ -1045,7 +1137,7 @@
         legendItem.innerHTML = `
           <div class="legend-title">
             <div class="legend-swatch" style="background: ${getColor(series.ticker)}"></div>
-            <strong>${series.name}</strong>
+            <strong>${getDisplayName(series.ticker, series.name)}</strong>
           </div>
           <div class="legend-price">${formatValue(latestPrice, viewMode)}</div>
         `;
@@ -1055,7 +1147,7 @@
           api: lineSeries,
           points,
           color: getColor(series.ticker),
-          name: series.name
+          name: getDisplayName(series.ticker, series.name)
         };
       });
 
