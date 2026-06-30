@@ -850,6 +850,7 @@
     let comparisonPickMode = false;
     let alarmPickMode = false;
     let showEvents = false;
+    let githubAlarmsLoaded = false;
 
     const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
     const GITHUB_REPOSITORY = "night-gfx/notion-aktienchart";
@@ -932,6 +933,49 @@
     function getGitHubAlarmSearchUrl(ticker) {
       const query = `is:issue is:open in:body "Ticker: ${ticker}" "commodity-price-alert"`;
       return `https://github.com/${GITHUB_REPOSITORY}/issues?q=${encodeURIComponent(query)}`;
+    }
+
+    function parseGitHubAlarm(issue) {
+      const body = issue.body || "";
+      if (!body.includes("<!-- commodity-price-alert -->")) return null;
+      const ticker = body.match(/^Ticker:\s*(.+?)\s*$/m)?.[1];
+      const price = Number(body.match(/^Zielpreis:\s*(.+?)\s*$/m)?.[1]);
+      const direction = body.match(/^Richtung:\s*(above|below)\s*$/m)?.[1];
+      if (!ticker || !Number.isFinite(price) || price <= 0 || !direction) return null;
+      return {
+        ticker,
+        price,
+        direction,
+        createdAt: issue.created_at,
+        issueNumber: issue.number,
+        issueUrl: issue.html_url,
+        triggered: false
+      };
+    }
+
+    async function syncPriceAlarmsFromGitHub() {
+      try {
+        const url = `https://api.github.com/repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=100`;
+        const response = await fetch(url, {
+          cache: "no-store",
+          headers: { Accept: "application/vnd.github+json" }
+        });
+        if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`);
+        const issues = await response.json();
+        const alarms = {};
+        issues
+          .filter((issue) => !issue.pull_request)
+          .map(parseGitHubAlarm)
+          .filter(Boolean)
+          .sort((a, b) => b.issueNumber - a.issueNumber)
+          .forEach((alarm) => {
+            if (!alarms[alarm.ticker]) alarms[alarm.ticker] = alarm;
+          });
+        savePriceAlarms(alarms);
+        githubAlarmsLoaded = true;
+      } catch (error) {
+        console.warn("GitHub-Preisalarm konnte nicht synchronisiert werden.", error);
+      }
     }
 
     function getViewMode() {
@@ -1113,6 +1157,26 @@
         })
         .filter((point) => point !== null)
         .sort((a, b) => a.time.localeCompare(b.time));
+    }
+
+    function transformActualPrice(series, actualPrice, viewMode, basisDate) {
+      if (viewMode === "price") return actualPrice;
+      const rawData = series.data || [];
+      let basePrice = null;
+      if (basisDate) {
+        const basisPoint = rawData.find(([date]) => date >= basisDate);
+        if (basisPoint) basePrice = Number(basisPoint[1]);
+      }
+      if (!Number.isFinite(basePrice) || basePrice <= 0) {
+        const firstValid = rawData.find(([, price]) =>
+          Number.isFinite(Number(price)) && Number(price) > 0
+        );
+        if (firstValid) basePrice = Number(firstValid[1]);
+      }
+      if (!Number.isFinite(basePrice) || basePrice <= 0) return NaN;
+      return viewMode === "log-return"
+        ? 100 * Math.log(actualPrice / basePrice)
+        : (actualPrice / basePrice) * 100;
     }
 
     function getLatestDate(selectedSeries) {
@@ -1524,9 +1588,12 @@
         const alarm = selectedSeries.length === 1
           ? getPriceAlarm(series.ticker)
           : null;
-        if (alarm && viewMode === "price") {
+        const alarmDisplayPrice = alarm
+          ? transformActualPrice(series, Number(alarm.price), viewMode, basisTargetDate)
+          : NaN;
+        if (alarm && Number.isFinite(alarmDisplayPrice)) {
           lineSeries.createPriceLine({
-            price: Number(alarm.price),
+            price: alarmDisplayPrice,
             color: "#f97316",
             lineWidth: 2,
             lineStyle: 2,
@@ -1800,6 +1867,9 @@
           throw new Error("Invalid data format");
         }
 
+        if (!githubAlarmsLoaded) {
+          await syncPriceAlarmsFromGitHub();
+        }
         setStatus("");
         buildControls();
         renderChart();
