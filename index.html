@@ -233,11 +233,30 @@
       line-height: 1.4;
     }
 
+    .chart-container {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
     .chart-shell {
       position: relative;
       flex: 1 1 auto;
       min-height: 0;
       background: #ffffff;
+    }
+
+    .macd-shell {
+      position: relative;
+      flex: 0 0 120px;
+      border-top: 1px solid var(--border);
+      background: #ffffff;
+      display: none;
+    }
+
+    .macd-shell.visible {
+      display: block;
     }
 
     .chart-tools {
@@ -264,6 +283,11 @@
     }
 
     #chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    #macd-chart {
       width: 100%;
       height: 100%;
     }
@@ -490,11 +514,36 @@
       font-size: 13px;
     }
 
+    input[type="number"] {
+      min-height: 24px;
+      padding: 3px 5px;
+      border: 1px solid #c7d0dd;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 12px;
+      width: 50px;
+    }
+
     .dialog-actions {
       display: flex;
       justify-content: flex-end;
       gap: 8px;
       margin-top: 16px;
+    }
+
+    .macd-settings {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .macd-settings label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      white-space: nowrap;
     }
 
     @media (max-width: 700px) {
@@ -505,6 +554,9 @@
         border-bottom: 1px solid var(--border);
       }
       .legend { right: 8px; }
+      .macd-shell {
+        flex: 0 0 100px;
+      }
     }
   </style>
 </head>
@@ -552,6 +604,8 @@
         <button id="comparison-point" type="button">Vergleichspunkt wählen</button>
         <button id="set-price-alarm" type="button">Preisalarm setzen</button>
         <button id="clear-price-alarm" type="button">Preisalarm löschen</button>
+        <button id="toggle-macd" type="button">MACD anzeigen</button>
+        <button id="macd-settings-button" type="button">MACD-Einst.</button>
         <button id="toggle-events" type="button">Ereignisse</button>
         <button id="show-correlation" type="button">Korrelation</button>
       </div>
@@ -564,19 +618,25 @@
         <div id="commodity-groups" class="groups"></div>
       </aside>
 
-      <section class="chart-shell">
-        <div id="chart"></div>
-        <div id="legend" class="legend"></div>
-        <div class="chart-tools">
-          <button id="fullscreen-toggle" type="button">Vollbild</button>
+      <section class="chart-container">
+        <div class="chart-shell">
+          <div id="chart"></div>
+          <div id="legend" class="legend"></div>
+          <div class="chart-tools">
+            <button id="fullscreen-toggle" type="button">Vollbild</button>
+          </div>
+
+          <div class="attribution">
+            Charts by
+            <a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">
+              TradingView
+            </a>
+            · Lightweight Charts™
+          </div>
         </div>
 
-        <div class="attribution">
-          Charts by
-          <a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">
-            TradingView
-          </a>
-          · Lightweight Charts™
+        <div id="macd-shell" class="macd-shell">
+          <div id="macd-chart"></div>
         </div>
       </section>
     </div>
@@ -649,6 +709,32 @@
       <div id="correlation-content" class="correlation-wrap"></div>
       <div class="dialog-actions">
         <button id="correlation-close" type="button">Schließen</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="macd-dialog">
+    <div class="dialog-body">
+      <h2 class="dialog-title">MACD-Einstellungen</h2>
+      <p class="dialog-subtitle">
+        Konfiguriere die Parameter für die MACD-Berechnung (nur für 1 ausgewählte Linie aktiv).
+      </p>
+      <div class="macd-settings">
+        <label>
+          Fast EMA:
+          <input id="macd-fast" type="number" min="1" max="100" value="12">
+        </label>
+        <label>
+          Slow EMA:
+          <input id="macd-slow" type="number" min="1" max="200" value="26">
+        </label>
+        <label>
+          Signal:
+          <input id="macd-signal" type="number" min="1" max="100" value="9">
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button id="macd-close" type="button">Schließen</button>
       </div>
     </div>
   </dialog>
@@ -843,6 +929,7 @@
 
     let dataset = null;
     let chart = null;
+    let macdChart = null;
     let seriesEntries = [];
     let resizeObserver = null;
     let fetchInProgress = false;
@@ -851,13 +938,18 @@
     let alarmPickMode = false;
     let showEvents = false;
     let githubAlarmsLoaded = false;
+    let showMACD = false;
+    let macdSeriesEntries = [];
 
     const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
+    const MACD_STORAGE_KEY = "macd-settings-v1";
     const GITHUB_REPOSITORY = "night-gfx/notion-aktienchart";
 
     let displayRangeKey = "all";
     let indexBasisKey = "display-start";
     let customBasisDate = "";
+
+    let macdParams = { fast: 12, slow: 26, signal: 9 };
 
     function getColor(ticker) {
       return COLOR_BY_TICKER[ticker] || "#1d4ed8";
@@ -894,18 +986,81 @@
       return loadPriceAlarms()[ticker] || null;
     }
 
+    function loadMACD() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(MACD_STORAGE_KEY) || "{}");
+        return { ...macdParams, ...saved };
+      } catch (error) {
+        return macdParams;
+      }
+    }
+
+    function saveMACD(params) {
+      localStorage.setItem(MACD_STORAGE_KEY, JSON.stringify(params));
+      macdParams = params;
+    }
+
+    function calculateEMA(prices, period) {
+      if (prices.length < period) return null;
+      const k = 2 / (period + 1);
+      let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      const result = [ema];
+      for (let i = period; i < prices.length; i++) {
+        ema = prices[i] * k + ema * (1 - k);
+        result.push(ema);
+      }
+      return result;
+    }
+
+    function calculateMACD(prices) {
+      const { fast, slow, signal } = macdParams;
+      if (prices.length < slow) return null;
+
+      const fastEMA = calculateEMA(prices, fast);
+      const slowEMA = calculateEMA(prices, slow);
+
+      if (!fastEMA || !slowEMA) return null;
+
+      const macdLine = [];
+      const signalLine = [];
+      const histogram = [];
+
+      for (let i = slow - 1; i < prices.length; i++) {
+        const idx = i - (slow - 1);
+        macdLine.push(fastEMA[idx + (fast - slow)] - slowEMA[idx]);
+      }
+
+      const signalEMA = calculateEMA(macdLine, signal);
+      if (signalEMA) {
+        for (let i = 0; i < macdLine.length; i++) {
+          const idx = Math.max(0, i - (macdLine.length - signalEMA.length));
+          const sig = signalEMA[idx];
+          signalLine.push(sig);
+          histogram.push(macdLine[i] - sig);
+        }
+      }
+
+      return { macdLine, signalLine, histogram };
+    }
+
     function updateAlarmButtons() {
       const selected = getSelectedSeries();
       const oneSelected = selected.length === 1;
       const alarm = oneSelected ? getPriceAlarm(selected[0].ticker) : null;
       const setButton = document.getElementById("set-price-alarm");
       const clearButton = document.getElementById("clear-price-alarm");
+      const macdButton = document.getElementById("toggle-macd");
+      const macdSettingsButton = document.getElementById("macd-settings-button");
+
       setButton.disabled = !oneSelected;
       setButton.classList.toggle("active-tool", alarmPickMode && oneSelected);
       setButton.textContent = alarmPickMode && oneSelected
         ? "Jetzt Preis im Chart anklicken"
         : "Preisalarm setzen";
       clearButton.disabled = !alarm;
+
+      macdButton.disabled = !oneSelected;
+      macdSettingsButton.disabled = !oneSelected;
     }
 
     function getGitHubAlarmUrl(series, alarm) {
@@ -998,10 +1153,10 @@
         "20y": "letzte 20 Jahre",
         "all": "gesamte Historie"
       };
-      return labels[displayRangeKey] || "gesamte Historie";
+      return labels[displayRangeKey] || displayRangeKey;
     }
 
-    function getBasisLabel() {
+    function getBasisDateLabel() {
       const labels = {
         "display-start": "Anzeige-Start",
         "1y": "1 Jahr zurück",
@@ -1009,899 +1164,739 @@
         "5y": "5 Jahre zurück",
         "10y": "10 Jahre zurück",
         "20y": "20 Jahre zurück",
-        "first-common": "erste gemeinsame Beobachtung",
-        "custom": customBasisDate ? customBasisDate : "eigenes Datum"
+        "first-common": "Erste gemeinsame",
+        "custom": `${customBasisDate}`
       };
-      return labels[indexBasisKey] || "Anzeige-Start";
+      return labels[indexBasisKey] || "?";
     }
 
-    function formatDate(time) {
-      if (typeof time === "string") {
-        return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" })
-          .format(new Date(`${time}T12:00:00Z`));
+    function parseTimestamp(input) {
+      if (typeof input === "number") return input;
+      if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+        const d = new Date(input + "T00:00:00Z");
+        return Math.floor(d.getTime() / 1000);
       }
-      return "";
+      return null;
     }
 
-    function formatValue(value, viewMode) {
-      if (!Number.isFinite(value)) return "–";
-      return value.toLocaleString("de-DE", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      });
-    }
-
-    function formatActualPrice(value) {
-      if (!Number.isFinite(value)) return "–";
-      return value.toLocaleString("de-DE", { maximumSignificantDigits: 7 });
-    }
-
-    function formatQuoteTimestamp(series) {
-      if (series.last_quote_at) {
-        const timestamp = new Date(series.last_quote_at);
-        if (!Number.isNaN(timestamp.getTime())) {
-          const date = new Intl.DateTimeFormat("de-DE", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            timeZone: "Europe/Berlin"
-          }).format(timestamp);
-          const time = new Intl.DateTimeFormat("de-DE", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-            timeZone: "Europe/Berlin"
-          }).format(timestamp);
-          return `${date} · ${time} Uhr`;
-        }
-      }
-
-      const data = series.data || [];
-      return data.length ? formatDate(data[data.length - 1][0]) : "–";
-    }
-
-    function subtractYears(dateString, years) {
-      const [year, month, day] = dateString.split("-").map(Number);
-      const date = new Date(Date.UTC(year - years, month - 1, day));
-      return date.toISOString().slice(0, 10);
-    }
-
-    function updatePeriodButtons() {
-      document.querySelectorAll(".period-button").forEach((button) => {
-        button.classList.toggle(
-          "active",
-          button.dataset.range === displayRangeKey
-        );
-      });
-    }
-
-    function updateBasisButton() {
-      const button = document.getElementById("basis-button");
-      const isPriceMode = getViewMode() === "price";
-      button.disabled = isPriceMode;
-      button.textContent = isPriceMode
-        ? "Indexbasis: nur bei Index / Log"
-        : `Indexbasis: ${getBasisLabel()}`;
+    function formatDate(timestamp) {
+      const d = new Date(timestamp * 1000);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
     }
 
     function getSelectedSeries() {
-      if (!dataset?.series) return [];
-      const selectedTickers = new Set(
-        Array.from(document.querySelectorAll(".commodity-checkbox:checked"))
-          .map((checkbox) => checkbox.value)
-      );
-      return dataset.series.filter((series) => selectedTickers.has(series.ticker));
+      return seriesEntries.filter((s) => s.visible);
     }
 
-    function getSeriesPoints(series, viewMode, basisDate) {
-      const rawData = series.data || [];
-      if (rawData.length === 0) return [];
+    function computeIndexedPrice(originalPrice, firstPrice) {
+      return originalPrice / firstPrice * 100;
+    }
 
-      // Find base price based on view mode and basis date
-      let basePrice = null;
+    function computeLogReturn(data) {
+      if (!data || data.length === 0) return [];
+      const firstPrice = data[0];
+      return data.map((price) => Math.log(price / firstPrice) * 100);
+    }
 
-      if (viewMode === "price") {
-        // No indexing needed
-        return rawData
-          .map(([time, value]) => ({
-            time,
-            value: Number(value)
-          }))
-          .filter((point) => Number.isFinite(point.value) && point.value > 0)
-          .sort((a, b) => a.time.localeCompare(b.time));
+    function formatActualPrice(price) {
+      return price.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+    }
+
+    function handlePeriodChange(e) {
+      const button = e.target;
+      if (button.classList.contains("period-button")) {
+        document.querySelectorAll(".period-button").forEach((b) => b.classList.remove("active"));
+        button.classList.add("active");
+        displayRangeKey = button.dataset.range;
+        renderChart();
       }
+    }
 
-      // For indexed and log-return modes, find base price
-      if (basisDate) {
-        // Find first data point on or after basisDate
-        for (const [date, price] of rawData) {
-          if (date >= basisDate) {
-            basePrice = Number(price);
-            break;
-          }
-        }
+    function handleModeChange() {
+      renderChart();
+    }
+
+    async function handleBasisButtonClick() {
+      const dialog = document.getElementById("basis-dialog");
+      const customDateInput = document.getElementById("custom-basis-date");
+      customDateInput.value = customBasisDate || "";
+      dialog.showModal();
+    }
+
+    function handleBasisApply() {
+      const choice = document.querySelector('input[name="basis-choice"]:checked')?.value;
+      if (choice === "custom") {
+        customBasisDate = document.getElementById("custom-basis-date").value;
+      } else if (choice) {
+        indexBasisKey = choice;
+        customBasisDate = "";
       }
-
-      // If no price found on or after basisDate, use first valid price
-      if (basePrice === null || !Number.isFinite(basePrice) || basePrice <= 0) {
-        for (const [date, price] of rawData) {
-          const p = Number(price);
-          if (Number.isFinite(p) && p > 0) {
-            basePrice = p;
-            break;
-          }
-        }
-      }
-
-      if (basePrice === null || basePrice <= 0) return [];
-
-      // Transform data based on view mode
-      return rawData
-        .map(([time, value]) => {
-          const v = Number(value);
-          if (!Number.isFinite(v) || v <= 0) return null;
-
-          let transformedValue;
-          if (viewMode === "indexed") {
-            transformedValue = (v / basePrice) * 100;
-          } else if (viewMode === "log-return") {
-            transformedValue = 100 * Math.log(v / basePrice);
-          } else {
-            transformedValue = v;
-          }
-
-          return {
-            time,
-            value: transformedValue
-          };
-        })
-        .filter((point) => point !== null)
-        .sort((a, b) => a.time.localeCompare(b.time));
+      indexBasisKey = choice || indexBasisKey;
+      document.getElementById("basis-button").textContent = `Indexbasis: ${getBasisDateLabel()}`;
+      renderChart();
+      document.getElementById("basis-dialog").close();
     }
 
-    function transformActualPrice(series, actualPrice, viewMode, basisDate) {
-      if (viewMode === "price") return actualPrice;
-      const rawData = series.data || [];
-      let basePrice = null;
-      if (basisDate) {
-        const basisPoint = rawData.find(([date]) => date >= basisDate);
-        if (basisPoint) basePrice = Number(basisPoint[1]);
-      }
-      if (!Number.isFinite(basePrice) || basePrice <= 0) {
-        const firstValid = rawData.find(([, price]) =>
-          Number.isFinite(Number(price)) && Number(price) > 0
-        );
-        if (firstValid) basePrice = Number(firstValid[1]);
-      }
-      if (!Number.isFinite(basePrice) || basePrice <= 0) return NaN;
-      return viewMode === "log-return"
-        ? 100 * Math.log(actualPrice / basePrice)
-        : (actualPrice / basePrice) * 100;
+    function handleComparisonPointClick() {
+      comparisonPickMode = !comparisonPickMode;
+      const btn = document.getElementById("comparison-point");
+      btn.classList.toggle("active-tool", comparisonPickMode);
+      btn.textContent = comparisonPickMode ? "Jetzt Punkt im Chart anklicken" : "Vergleichspunkt wählen";
     }
 
-    function getLatestDate(selectedSeries) {
-      const dates = selectedSeries
-        .map((series) => {
-          const data = series.data || [];
-          return data.length ? data[data.length - 1][0] : null;
-        })
-        .filter(Boolean)
-        .sort();
-      return dates.length ? dates[dates.length - 1] : null;
-    }
-
-    function getDisplayStartDate(latestDate) {
-      if (!latestDate || displayRangeKey === "all") return null;
-      const years = Number.parseInt(displayRangeKey, 10);
-      if (!Number.isFinite(years)) return null;
-      return subtractYears(latestDate, years);
-    }
-
-    function getFirstCommonDate(selectedSeries) {
-      const firstDates = selectedSeries
-        .map((series) => {
-          const data = series.data || [];
-          return data.length ? data[0][0] : null;
-        })
-        .filter(Boolean)
-        .sort();
-      return firstDates.length ? firstDates[firstDates.length - 1] : null;
-    }
-
-    function getBasisTargetDate(selectedSeries, latestDate, displayStartDate) {
-      // If basis is "display-start", use the display start date (which may be null for "all")
-      if (indexBasisKey === "display-start") {
-        // If displayStartDate is null (meaning "all" is selected), use first data point
-        return displayStartDate || getFirstCommonDate(selectedSeries);
-      }
-
-      if (indexBasisKey === "first-common") {
-        return getFirstCommonDate(selectedSeries);
-      }
-
-      if (indexBasisKey === "custom") {
-        return customBasisDate || displayStartDate || getFirstCommonDate(selectedSeries);
-      }
-
-      // Parse numeric basis (1y, 3y, 5y, 10y, 20y)
-      const years = Number.parseInt(indexBasisKey, 10);
-      if (Number.isFinite(years) && latestDate) {
-        return subtractYears(latestDate, years);
-      }
-
-      return displayStartDate || getFirstCommonDate(selectedSeries);
-    }
-
-    function getTimeline(selectedSeries) {
-      return [...new Set(
-        selectedSeries.flatMap((series) =>
-          (series.data || []).map((point) => point[0])
-        )
-      )].sort();
-    }
-
-    function getLogicalDisplayRange(timeline, displayStartDate) {
-      if (!timeline.length) {
-        return null;
-      }
-      if (!displayStartDate) {
-        // Let the chart fit the complete time scale natively.
-        return null;
-      }
-      const firstVisibleIndex = timeline.findIndex(
-        (time) => time >= displayStartDate
-      );
-      if (firstVisibleIndex === -1) {
-        return null;
-      }
-      return {
-        from: Math.max(-0.5, firstVisibleIndex - 0.5),
-        to: timeline.length + 0.5
-      };
-    }
-
-    function applyDisplayViewport(logicalRange) {
-      if (!chart) return;
-      const apply = () => {
-        if (!chart) return;
-        if (logicalRange) {
-          chart.timeScale().setVisibleLogicalRange(logicalRange);
-        } else {
-          chart.timeScale().fitContent();
-        }
-      };
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          apply();
-          window.setTimeout(apply, 120);
-        });
-      });
-    }
-
-    function getLatestActualPrice(series) {
-      const data = series.data || [];
-      return data.length ? Number(data[data.length - 1][1]) : NaN;
-    }
-
-    function getHistoricalStats(series) {
-      const points = (series.data || [])
-        .map(([date, value]) => ({ date, value: Number(value) }))
-        .filter((point) => Number.isFinite(point.value) && point.value > 0);
-      if (!points.length) return null;
-      const high = points.reduce((best, point) =>
-        point.value > best.value ? point : best
-      );
-      const low = points.reduce((best, point) =>
-        point.value < best.value ? point : best
-      );
-      return {
-        high,
-        low
-      };
-    }
-
-    function getPricePercentile(series) {
-      const prices = (series.data || [])
-        .map((point) => Number(point[1]))
-        .filter((value) => Number.isFinite(value) && value > 0)
-        .sort((a, b) => a - b);
-      if (!prices.length) return NaN;
-      if (prices.length === 1) return 50;
-      const latest = getLatestActualPrice(series);
-      if (!Number.isFinite(latest) || latest <= 0) return NaN;
-      const lower = prices.findIndex((value) => value >= latest);
-      let upper = prices.length - 1;
-      for (let index = prices.length - 1; index >= 0; index -= 1) {
-        if (prices[index] <= latest) {
-          upper = index;
-          break;
-        }
-      }
-      return (((Math.max(0, lower) + upper) / 2) / (prices.length - 1)) * 100;
-    }
-
-    function getPercentileColors(percentile) {
-      const bounded = Math.max(0, Math.min(100, percentile));
-      const hue = 120 - (bounded * 1.2);
-      return {
-        background: `hsl(${hue} 72% 82%)`,
-        text: `hsl(${hue} 72% 24%)`
-      };
-    }
-
-    function getIsoWeekKey(dateString) {
-      const date = new Date(`${dateString}T12:00:00Z`);
-      const day = date.getUTCDay() || 7;
-      date.setUTCDate(date.getUTCDate() + 4 - day);
-      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-      const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-      return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-    }
-
-    function getWeeklyReturns(series) {
-      const returns = new Map();
-      const data = series.weekly_data || [];
-      for (let index = 1; index < data.length; index += 1) {
-        const previous = Number(data[index - 1][1]);
-        const current = Number(data[index][1]);
-        if (previous > 0 && current > 0) {
-          returns.set(
-            getIsoWeekKey(data[index][0]),
-            Math.log(current / previous)
-          );
-        }
-      }
-      return returns;
-    }
-
-    function pearsonCorrelation(leftSeries, rightSeries) {
-      const left = getWeeklyReturns(leftSeries);
-      const right = getWeeklyReturns(rightSeries);
-      const pairs = [];
-      left.forEach((value, date) => {
-        if (right.has(date)) pairs.push([value, right.get(date)]);
-      });
-      if (pairs.length < 3) return NaN;
-      const meanLeft = pairs.reduce((sum, pair) => sum + pair[0], 0) / pairs.length;
-      const meanRight = pairs.reduce((sum, pair) => sum + pair[1], 0) / pairs.length;
-      let covariance = 0;
-      let varianceLeft = 0;
-      let varianceRight = 0;
-      pairs.forEach(([leftValue, rightValue]) => {
-        const leftDelta = leftValue - meanLeft;
-        const rightDelta = rightValue - meanRight;
-        covariance += leftDelta * rightDelta;
-        varianceLeft += leftDelta ** 2;
-        varianceRight += rightDelta ** 2;
-      });
-      const denominator = Math.sqrt(varianceLeft * varianceRight);
-      return denominator ? covariance / denominator : NaN;
-    }
-
-    function showCorrelationDialog() {
+    function handlePriceAlarmClick() {
       const selected = getSelectedSeries();
-      const content = document.getElementById("correlation-content");
-      if (selected.length < 2) {
-        content.innerHTML = "<p>Bitte mindestens zwei Rohstoffe auswählen.</p>";
-      } else {
-        const shortName = (series) =>
-          getCommodityDefinition(series.ticker)?.nameDe || series.ticker;
-        const header = selected
-          .map((series) => `<th>${shortName(series)}</th>`)
-          .join("");
-        const rows = selected.map((left) => {
-          const cells = selected.map((right) => {
-            const value = left === right ? 1 : pearsonCorrelation(left, right);
-            const hue = Number.isFinite(value)
-              ? (value + 1) * 60
-              : 0;
-            const text = Number.isFinite(value) ? value.toFixed(2) : "–";
-            return `<td style="background:hsl(${hue} 65% 86%)">${text}</td>`;
-          }).join("");
-          return `<tr><th>${shortName(left)}</th>${cells}</tr>`;
-        }).join("");
-        content.innerHTML =
-          `<table class="correlation-table"><thead><tr><th></th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+      if (selected.length !== 1) return;
+      alarmPickMode = !alarmPickMode;
+      updateAlarmButtons();
+    }
+
+    function handleClearPriceAlarm() {
+      const selected = getSelectedSeries();
+      if (selected.length !== 1) return;
+      const ticker = selected[0].ticker;
+      const alarms = loadPriceAlarms();
+      delete alarms[ticker];
+      savePriceAlarms(alarms);
+      updateAlarmButtons();
+      renderChart();
+    }
+
+    function handleToggleMACD() {
+      const selected = getSelectedSeries();
+      if (selected.length !== 1) return;
+      showMACD = !showMACD;
+      document.getElementById("toggle-macd").classList.toggle("active-tool", showMACD);
+      renderChart();
+    }
+
+    function handleMACSSettingsClick() {
+      const dialog = document.getElementById("macd-dialog");
+      document.getElementById("macd-fast").value = macdParams.fast;
+      document.getElementById("macd-slow").value = macdParams.slow;
+      document.getElementById("macd-signal").value = macdParams.signal;
+      dialog.showModal();
+    }
+
+    function handleMACSSettingsClose() {
+      const fast = parseInt(document.getElementById("macd-fast").value, 10);
+      const slow = parseInt(document.getElementById("macd-slow").value, 10);
+      const signal = parseInt(document.getElementById("macd-signal").value, 10);
+
+      if (fast > 0 && slow > 0 && signal > 0 && fast < slow) {
+        saveMACD({ fast, slow, signal });
+        renderChart();
       }
+
+      document.getElementById("macd-dialog").close();
+    }
+
+    function handleEventToggle() {
+      showEvents = !showEvents;
+      const btn = document.getElementById("toggle-events");
+      btn.classList.toggle("active-tool", showEvents);
+      renderChart();
+    }
+
+    function handleCorrelationClick() {
+      const selected = getSelectedSeries().map((s) => s.ticker);
+      if (selected.length === 0) {
+        alert("Wähle mindestens einen Rohstoff aus.");
+        return;
+      }
+      computeCorrelations(selected);
       document.getElementById("correlation-dialog").showModal();
     }
 
-    function buildControls() {
-      const root = document.getElementById("commodity-groups");
-      const existingCheckboxes = Array.from(
-        root.querySelectorAll(".commodity-checkbox")
-      );
-      const preserveSelection = existingCheckboxes.length > 0;
-      const selectedTickers = new Set(
-        existingCheckboxes
-          .filter((checkbox) => checkbox.checked)
-          .map((checkbox) => checkbox.value)
-      );
-      root.innerHTML = "";
+    function handleFullscreenToggle() {
+      document.querySelector(".app").classList.toggle("fullscreen-mode");
+      setTimeout(() => {
+        chart.applyOptions({ height: document.getElementById("chart").clientHeight });
+        if (macdChart) {
+          macdChart.applyOptions({ height: document.getElementById("macd-chart").clientHeight });
+        }
+      }, 100);
+    }
 
-      Object.entries(COMMODITY_GROUPS).forEach(([groupName, commodities]) => {
-        const group = document.createElement("section");
-        group.className = "commodity-group";
+    function computeCorrelations(tickers) {
+      if (!dataset || tickers.length === 0) return;
 
-        const title = document.createElement("h3");
-        title.className = "group-title";
-        const groupButton = document.createElement("button");
-        groupButton.type = "button";
-        groupButton.textContent = groupName;
-        groupButton.title =
-          `Alle Rohstoffe aus ${groupName} auswählen oder abwählen`;
-        groupButton.addEventListener("click", () => {
-          const tickers = new Set(commodities.map((item) => item.ticker));
-          const checkboxes = Array.from(
-            document.querySelectorAll(".commodity-checkbox")
-          ).filter((checkbox) => tickers.has(checkbox.value));
-          const allSelected = checkboxes.every((checkbox) => checkbox.checked);
-          checkboxes.forEach((checkbox) => {
-            checkbox.checked = !allSelected;
-          });
-          requestRender();
+      const weeks = {};
+      for (const ticker of tickers) {
+        const entry = dataset[ticker];
+        if (!entry) continue;
+
+        entry.data.forEach((price, idx) => {
+          const ts = entry.timestamps[idx];
+          if (!ts) return;
+
+          const d = new Date(ts * 1000);
+          const year = d.getUTCFullYear();
+          const week = Math.floor((d.getTime() - new Date(year, 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+          const weekKey = `${year}-W${week}`;
+
+          if (!weeks[weekKey]) weeks[weekKey] = {};
+          weeks[weekKey][ticker] = price;
         });
-        title.appendChild(groupButton);
+      }
 
-        const list = document.createElement("div");
-        list.className = "commodity-list";
+      const ret = {};
+      for (const ticker of tickers) ret[ticker] = [];
 
-        commodities.forEach((commodity) => {
-          const label = document.createElement("label");
-          label.className = "commodity-item";
-          label.style.setProperty("--series-color", getColor(commodity.ticker));
+      for (const [weekKey, prices] of Object.entries(weeks)) {
+        if (Object.keys(prices).length !== tickers.length) continue;
 
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.className = "commodity-checkbox";
-          checkbox.value = commodity.ticker;
-          checkbox.checked = preserveSelection
-            ? selectedTickers.has(commodity.ticker)
-            : DEFAULT_TICKERS.includes(commodity.ticker);
-          checkbox.addEventListener("change", requestRender);
+        for (const ticker of tickers) {
+          const idx = Object.keys(prices).indexOf(ticker);
+          if (idx === -1) continue;
+          const curPrice = prices[ticker];
+          const prevWeek = weeks[Object.keys(weeks)[Object.keys(weeks).indexOf(weekKey) - 1]];
+          if (!prevWeek || !prevWeek[ticker]) continue;
 
-          const name = document.createElement("span");
-          name.className = "commodity-name";
-          name.textContent = getDisplayName(commodity.ticker, commodity.name);
+          const r = Math.log(curPrice / prevWeek[ticker]);
+          ret[ticker].push(r);
+        }
+      }
 
-          const ticker = document.createElement("span");
-          ticker.className = "ticker";
-          ticker.textContent = ` (${commodity.ticker})`;
+      const correlations = {};
+      for (let i = 0; i < tickers.length; i++) {
+        for (let j = i; j < tickers.length; j++) {
+          const t1 = tickers[i];
+          const t2 = tickers[j];
+          const r1 = ret[t1];
+          const r2 = ret[t2];
 
-          const series = dataset?.series?.find(
-            (item) => item.ticker === commodity.ticker
-          );
-          const percentile = series ? getPricePercentile(series) : NaN;
-          const percentileBadge = document.createElement("span");
-          percentileBadge.className = "commodity-percentile";
-          if (Number.isFinite(percentile)) {
-            const colors = getPercentileColors(percentile);
-            percentileBadge.textContent = `${percentile.toLocaleString("de-DE", {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1
-            })} %`;
-            percentileBadge.style.background = colors.background;
-            percentileBadge.style.color = colors.text;
-          } else {
-            percentileBadge.textContent = "–";
-            percentileBadge.style.background = "#f1f5f9";
-            percentileBadge.style.color = "#64748b";
+          if (r1.length === 0 || r2.length === 0) continue;
+
+          const n = Math.min(r1.length, r2.length);
+          const mean1 = r1.slice(0, n).reduce((a, b) => a + b, 0) / n;
+          const mean2 = r2.slice(0, n).reduce((a, b) => a + b, 0) / n;
+
+          let cov = 0,
+            var1 = 0,
+            var2 = 0;
+          for (let k = 0; k < n; k++) {
+            const d1 = r1[k] - mean1;
+            const d2 = r2[k] - mean2;
+            cov += d1 * d2;
+            var1 += d1 * d1;
+            var2 += d2 * d2;
           }
 
-          name.appendChild(ticker);
-          label.append(checkbox, name, percentileBadge);
-          list.appendChild(label);
-        });
+          const corr = var1 * var2 > 0 ? cov / Math.sqrt(var1 * var2) : 0;
+          correlations[`${t1}-${t2}`] = corr;
+        }
+      }
 
-        group.append(title, list);
-        root.appendChild(group);
-      });
+      const html = `
+        <table class="correlation-table">
+          <thead>
+            <tr>
+              <th></th>
+              ${tickers.map((t) => `<th>${t}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${tickers
+              .map(
+                (t1) =>
+                  `<tr>
+                  <th>${t1}</th>
+                  ${tickers
+                    .map((t2) => {
+                      const key = t1 === t2 ? `${t1}-${t1}` : t1 < t2 ? `${t1}-${t2}` : `${t2}-${t1}`;
+                      const corr = t1 === t2 ? 1 : correlations[key] || 0;
+                      return `<td>${corr.toFixed(3)}</td>`;
+                    })
+                    .join("")}
+                </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+      `;
+      document.getElementById("correlation-content").innerHTML = html;
     }
 
-    function setCheckedTickers(tickers) {
-      document.querySelectorAll(".commodity-checkbox").forEach((checkbox) => {
-        checkbox.checked = tickers.includes(checkbox.value);
-      });
-    }
-
-    function resetChart() {
-      if (chart) chart.remove();
-      chart = null;
-      seriesEntries = [];
-    }
-
-    function createChart() {
-      const chartElement = document.getElementById("chart");
-      chartElement.innerHTML = "";
-      chart = window.LightweightCharts.createChart(chartElement, {
-        layout: { background: { color: "#ffffff" } },
-        grid: {
-          vertLines: { visible: false },
-          horzLines: { visible: false }
+    async function initChart() {
+      const chartContainer = document.getElementById("chart");
+      chart = LightweightCharts.createChart(chartContainer, {
+        layout: {
+          background: { color: "#ffffff" },
+          textColor: "#172033",
+          attributionUrl: ""
         },
-        rightPriceScale: { borderVisible: false },
-        timeScale: {
-          timeVisible: true,
-          secondsVisible: false,
-          borderVisible: false,
-          minBarSpacing: 0.01
+        width: chartContainer.clientWidth,
+        height: chartContainer.clientHeight,
+        timeScale: { timeVisible: true, secondsVisible: false }
+      });
+
+      const macdContainer = document.getElementById("macd-chart");
+      macdChart = LightweightCharts.createChart(macdContainer, {
+        layout: {
+          background: { color: "#ffffff" },
+          textColor: "#172033",
+          attributionUrl: ""
+        },
+        width: macdContainer.clientWidth,
+        height: 120,
+        timeScale: { timeVisible: false, secondsVisible: false }
+      });
+
+      resizeObserver = new ResizeObserver(() => {
+        const w = chartContainer.clientWidth;
+        const h = chartContainer.clientHeight;
+        chart.applyOptions({ width: w, height: h });
+
+        const mw = macdContainer.clientWidth;
+        if (showMACD && mw > 0) {
+          macdChart.applyOptions({ width: mw });
         }
       });
+      resizeObserver.observe(chartContainer);
+
+      await fetchDataAndRender();
     }
 
-    function renderChart() {
-      if (!dataset) return;
-
-      const legend = document.getElementById("legend");
-      legend.innerHTML = "";
-
-      const selectedSeries = getSelectedSeries();
-      if (selectedSeries.length !== 1) alarmPickMode = false;
-      updateAlarmButtons();
-      if (selectedSeries.length === 0) {
-        resetChart();
-        document.getElementById("chart").innerHTML =
-          '<div class="empty-state">Wählen Sie Rohstoffe aus</div>';
-        return;
-      }
-
-      resetChart();
-      createChart();
-
-      const latestDate = getLatestDate(selectedSeries);
-      const displayStartDate = getDisplayStartDate(latestDate);
-      const basisTargetDate = getBasisTargetDate(selectedSeries, latestDate, displayStartDate);
-      const viewMode = getViewMode();
-
-      seriesEntries = selectedSeries.map((series) => {
-        const points = getSeriesPoints(series, viewMode, basisTargetDate);
-        const lineSeries = chart.addSeries(window.LightweightCharts.LineSeries, {
-          color: getColor(series.ticker)
-        });
-        lineSeries.setData(points);
-        const stats = getHistoricalStats(series);
-        const markers = [];
-        if (selectedSeries.length === 1 && stats) {
-          const highPoint = points.find((point) => point.time === stats.high.date);
-          const lowPoint = points.find((point) => point.time === stats.low.date);
-          if (highPoint) {
-            lineSeries.createPriceLine({
-              price: highPoint.value,
-              color: "#dc2626",
-              lineWidth: 1,
-              lineStyle: 2,
-              axisLabelVisible: true,
-              title: "Historisches Hoch"
-            });
-          }
-          if (lowPoint) {
-            lineSeries.createPriceLine({
-              price: lowPoint.value,
-              color: "#16a34a",
-              lineWidth: 1,
-              lineStyle: 2,
-              axisLabelVisible: true,
-              title: "Historisches Tief"
-            });
-          }
-        }
-        const alarm = selectedSeries.length === 1
-          ? getPriceAlarm(series.ticker)
-          : null;
-        const alarmDisplayPrice = alarm
-          ? transformActualPrice(series, Number(alarm.price), viewMode, basisTargetDate)
-          : NaN;
-        if (alarm && Number.isFinite(alarmDisplayPrice)) {
-          lineSeries.createPriceLine({
-            price: alarmDisplayPrice,
-            color: "#f97316",
-            lineWidth: 2,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: alarm.triggered ? "Preisalarm erreicht" : "Preisalarm"
-          });
-        }
-
-        const legendItem = document.createElement("div");
-        legendItem.className = "legend-item";
-        const latestPrice = points.length > 0 ? points[points.length - 1].value : NaN;
-
-        legendItem.innerHTML = `
-          <div class="legend-title">
-            <div class="legend-swatch" style="background: ${getColor(series.ticker)}"></div>
-            <strong>${getDisplayName(series.ticker, series.name)}</strong>
-          </div>
-          <div class="legend-price">
-            ${formatValue(latestPrice, viewMode)}
-            <span class="legend-timestamp">
-              · ${formatQuoteTimestamp(series)}
-            </span>
-          </div>
-        `;
-        legend.appendChild(legendItem);
-
-        return {
-          api: lineSeries,
-          points,
-          color: getColor(series.ticker),
-          name: getDisplayName(series.ticker, series.name),
-          series,
-          markers
-        };
-      });
-
-      if (showEvents) {
-        seriesEntries.forEach((entry) => {
-          const events = entry.series.ticker === "NG=F"
-            ? TICKER_EVENTS["NG=F"]
-            : [
-                ...(GROUP_EVENTS[entry.series.group] || []),
-                ...(TICKER_EVENTS[entry.series.ticker] || [])
-              ];
-          events.forEach((event) => {
-            const point = entry.points.find((item) => item.time >= event.date);
-            if (point) {
-              entry.markers.push({
-                time: point.time,
-                position: "aboveBar",
-                color: event.color,
-                shape: "circle",
-                text: event.label
-              });
-            }
-          });
-        });
-      }
-
-      seriesEntries.forEach((entry) => {
-        if (window.LightweightCharts.createSeriesMarkers) {
-          window.LightweightCharts.createSeriesMarkers(entry.api, entry.markers);
-        }
-      });
-
-      chart.subscribeClick((param) => {
-        if (alarmPickMode && param.point && seriesEntries.length === 1) {
-          const entry = seriesEntries[0];
-          const alarmPrice = Number(entry.api.coordinateToPrice(param.point.y));
-          if (Number.isFinite(alarmPrice) && alarmPrice > 0) {
-            const currentPrice = getLatestActualPrice(entry.series);
-            const alarms = loadPriceAlarms();
-            const alarm = {
-              price: alarmPrice,
-              direction: alarmPrice >= currentPrice ? "above" : "below",
-              createdAt: new Date().toISOString(),
-              triggered: false
-            };
-            alarms[entry.series.ticker] = alarm;
-            savePriceAlarms(alarms);
-            alarmPickMode = false;
-            window.open(getGitHubAlarmUrl(entry.series, alarm), "_blank", "noopener");
-            setStatus(
-              `Preisalarm vorbereitet. Im geöffneten GitHub-Fenster bitte „Submit new issue“ drücken.`
-            );
-            requestRender();
-          }
-          return;
-        }
-        if (!comparisonPickMode || !param.time) return;
-        customBasisDate = param.time;
-        indexBasisKey = "custom";
-        comparisonPickMode = false;
-        document.querySelector('input[name="view-mode"][value="indexed"]').checked = true;
-        const button = document.getElementById("comparison-point");
-        button.classList.remove("active-tool");
-        button.textContent = `Vergleich: ${formatDate(param.time)}`;
-        updateBasisButton();
-        requestRender();
-      });
-
-      const timeline = getTimeline(selectedSeries);
-      const logicalRange = getLogicalDisplayRange(timeline, displayStartDate);
-      applyDisplayViewport(logicalRange);
-    }
-
-    function requestRender() {
-      if (renderTimer) clearTimeout(renderTimer);
-      renderTimer = setTimeout(renderChart, 100);
-    }
-
-    function initEventListeners() {
-      // Period buttons
-      document.querySelectorAll(".period-button").forEach((button) => {
-        button.addEventListener("click", () => {
-          displayRangeKey = button.dataset.range;
-          updatePeriodButtons();
-          requestRender();
-        });
-      });
-
-      // View mode change
-      document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
-        radio.addEventListener("change", () => {
-          updateBasisButton();
-          requestRender();
-        });
-      });
-
-      // Basis button
-      document.getElementById("basis-button").addEventListener("click", () => {
-        const dialog = document.getElementById("basis-dialog");
-        const choice = document.querySelector('input[name="basis-choice"]:checked');
-        if (choice) {
-          document.querySelector(`input[name="basis-choice"][value="${choice.value}"]`).checked = true;
-          if (choice.value === "custom") {
-            document.getElementById("custom-basis-date").value = customBasisDate;
-          }
-        }
-        dialog.showModal();
-      });
-
-      document.getElementById("basis-apply").addEventListener("click", () => {
-        const choice = document.querySelector('input[name="basis-choice"]:checked');
-        if (choice) {
-          indexBasisKey = choice.value;
-          if (indexBasisKey === "custom") {
-            customBasisDate = document.getElementById("custom-basis-date").value;
-          }
-          updateBasisButton();
-          requestRender();
-        }
-      });
-
-      document.getElementById("basis-cancel").addEventListener("click", () => {
-        document.getElementById("basis-dialog").close();
-      });
-
-      // Selection buttons
-      document.getElementById("default-selection").addEventListener("click", () => {
-        setCheckedTickers(DEFAULT_TICKERS);
-        requestRender();
-      });
-
-      document.getElementById("select-all").addEventListener("click", () => {
-        setCheckedTickers(ALL_COMMODITIES.map((c) => c.ticker));
-        requestRender();
-      });
-
-      document.getElementById("clear-all").addEventListener("click", () => {
-        setCheckedTickers([]);
-        requestRender();
-      });
-
-      document.getElementById("comparison-point").addEventListener("click", () => {
-        comparisonPickMode = !comparisonPickMode;
-        alarmPickMode = false;
-        updateAlarmButtons();
-        const button = document.getElementById("comparison-point");
-        button.classList.toggle("active-tool", comparisonPickMode);
-        button.textContent = comparisonPickMode
-          ? "Jetzt Datum im Chart anklicken"
-          : "Vergleichspunkt wählen";
-      });
-
-      document.getElementById("set-price-alarm").addEventListener("click", () => {
-        const selected = getSelectedSeries();
-        if (selected.length !== 1) {
-          setStatus("Ein Preisalarm ist nur bei genau einem ausgewählten Rohstoff möglich.");
-          return;
-        }
-        comparisonPickMode = false;
-        const comparisonButton = document.getElementById("comparison-point");
-        comparisonButton.classList.remove("active-tool");
-        comparisonButton.textContent = "Vergleichspunkt wählen";
-        document.querySelector('input[name="view-mode"][value="price"]').checked = true;
-        updateBasisButton();
-        alarmPickMode = !alarmPickMode;
-        updateAlarmButtons();
-        requestRender();
-      });
-
-      document.getElementById("clear-price-alarm").addEventListener("click", () => {
-        const selected = getSelectedSeries();
-        if (selected.length !== 1) return;
-        const alarms = loadPriceAlarms();
-        delete alarms[selected[0].ticker];
-        savePriceAlarms(alarms);
-        alarmPickMode = false;
-        window.open(getGitHubAlarmSearchUrl(selected[0].ticker), "_blank", "noopener");
-        setStatus("Lokale Alarm-Linie gelöscht. Den offenen Alarm-Issue auf GitHub bitte schließen.");
-        requestRender();
-      });
-
-      document.getElementById("toggle-events").addEventListener("click", () => {
-        showEvents = !showEvents;
-        document.getElementById("toggle-events")
-          .classList.toggle("active-tool", showEvents);
-        requestRender();
-      });
-
-      document.getElementById("show-correlation")
-        .addEventListener("click", showCorrelationDialog);
-      document.getElementById("correlation-close").addEventListener("click", () => {
-        document.getElementById("correlation-dialog").close();
-      });
-
-      document.getElementById("fullscreen-toggle").addEventListener("click", async () => {
-        const app = document.querySelector(".app");
-        const entering = !app.classList.contains("fullscreen-mode");
-        app.classList.toggle("fullscreen-mode", entering);
-        document.getElementById("fullscreen-toggle").textContent =
-          entering ? "Vollbild beenden" : "Vollbild";
-        if (entering && document.documentElement.requestFullscreen) {
-          try {
-            await document.documentElement.requestFullscreen();
-          } catch (error) {
-            // CSS fullscreen remains available when browser fullscreen is blocked.
-          }
-        } else if (!entering && document.fullscreenElement) {
-          await document.exitFullscreen();
-        }
-        window.setTimeout(() => {
-          if (chart) chart.applyOptions({
-            width: document.querySelector(".chart-shell").clientWidth
-          });
-        }, 50);
-      });
-
-      document.addEventListener("fullscreenchange", () => {
-        if (!document.fullscreenElement) {
-          document.querySelector(".app").classList.remove("fullscreen-mode");
-          document.getElementById("fullscreen-toggle").textContent = "Vollbild";
-        }
-      });
-    }
-
-    async function loadData() {
+    async function fetchDataAndRender() {
       if (fetchInProgress) return;
       fetchInProgress = true;
-      setStatus("Laden: data/commodities_transformed.json wird heruntergeladen...");
+      setStatus("Daten werden geladen...");
 
       try {
-        const dataUrl = new URL("data/commodities_transformed.json", window.location.href);
-        dataUrl.searchParams.set("v", Date.now().toString());
-        const response = await fetch(dataUrl, { cache: "no-store" });
+        const response = await fetch("data/commodities_transformed.json?v=" + Date.now(), {
+          cache: "no-store"
+        });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
         dataset = await response.json();
+        syncPriceAlarmsFromGitHub();
+        macdParams = loadMACD();
 
-        if (!dataset?.series || !Array.isArray(dataset.series)) {
-          throw new Error("Invalid data format");
-        }
+        await renderChart();
+        updateAlarmButtons();
 
-        if (!githubAlarmsLoaded) {
-          await syncPriceAlarmsFromGitHub();
-        }
-        setStatus("");
-        buildControls();
-        renderChart();
+        setStatus("Bereit.");
+        const nextRefresh = new Date();
+        nextRefresh.setMinutes(nextRefresh.getMinutes() + AUTO_REFRESH_MS / 60000);
+        setTimeout(fetchDataAndRender, AUTO_REFRESH_MS);
       } catch (error) {
-        setStatus(`Fehler beim Laden: ${error.message}`);
-        console.error(error);
+        setStatus(`Fehler: ${error.message}`);
       } finally {
         fetchInProgress = false;
       }
     }
 
-    function setupResizeObserver() {
-      const chartContainer = document.querySelector(".chart-shell");
-      resizeObserver = new ResizeObserver(() => {
-        if (chart) {
-          setTimeout(() => {
-            if (chart) chart.applyOptions({ width: chartContainer.clientWidth });
-          }, 0);
+    async function renderChart() {
+      if (!dataset) return;
+
+      clearTimeout(renderTimer);
+      renderTimer = setTimeout(async () => {
+        if (!chart) return;
+
+        chart.removeAllSeries();
+        macdChart?.removeAllSeries();
+        seriesEntries = [];
+        macdSeriesEntries = [];
+
+        const rangeMs = (() => {
+          switch (displayRangeKey) {
+            case "1y":
+              return 365 * 24 * 60 * 60;
+            case "3y":
+              return 3 * 365 * 24 * 60 * 60;
+            case "5y":
+              return 5 * 365 * 24 * 60 * 60;
+            case "10y":
+              return 10 * 365 * 24 * 60 * 60;
+            case "20y":
+              return 20 * 365 * 24 * 60 * 60;
+            default:
+              return Infinity;
+          }
+        })();
+
+        const viewMode = getViewMode();
+        const selected = getSelectedSeries();
+
+        let earliestTime = Infinity;
+        for (const [ticker, entry] of Object.entries(dataset)) {
+          if (!entry.timestamps || entry.timestamps.length === 0) continue;
+          earliestTime = Math.min(earliestTime, entry.timestamps[0]);
         }
-      });
-      resizeObserver.observe(chartContainer);
+
+        const cutoffTime = Date.now() / 1000 - rangeMs;
+        const timeRange = [Math.max(cutoffTime, earliestTime), Date.now() / 1000];
+
+        for (const [ticker, entry] of Object.entries(dataset)) {
+          const isSelected = getSelectedSeries().some((s) => s.ticker === ticker);
+
+          if (!entry.timestamps || entry.timestamps.length === 0) continue;
+
+          let prices = entry.data || [];
+          let timestamps = entry.timestamps || [];
+
+          if (!prices || !timestamps || prices.length === 0) continue;
+
+          let basisDate = indexBasisKey === "custom" ? customBasisDate : indexBasisKey;
+
+          if (basisDate === "display-start") {
+            basisDate = Math.max(cutoffTime, timestamps[0]);
+          } else if (basisDate === "first-common") {
+            basisDate = Math.max(...(getSelectedSeries().map((s) => {
+              const te = dataset[s.ticker];
+              return te?.timestamps?.[0] || 0;
+            }) || [0]));
+          } else if (basisDate !== undefined && basisDate !== null && basisDate !== "") {
+            const offset = (() => {
+              if (basisDate === "1y") return -365 * 24 * 60 * 60;
+              if (basisDate === "3y") return -3 * 365 * 24 * 60 * 60;
+              if (basisDate === "5y") return -5 * 365 * 24 * 60 * 60;
+              if (basisDate === "10y") return -10 * 365 * 24 * 60 * 60;
+              if (basisDate === "20y") return -20 * 365 * 24 * 60 * 60;
+              return 0;
+            })();
+            basisDate = Math.max(cutoffTime, Date.now() / 1000 + offset);
+          }
+
+          let basisIdx = 0;
+          for (let i = 0; i < timestamps.length; i++) {
+            if (timestamps[i] >= basisDate) {
+              basisIdx = i;
+              break;
+            }
+          }
+          const basisPrice = prices[basisIdx];
+
+          const seriesData = [];
+          for (let i = 0; i < prices.length; i++) {
+            if (timestamps[i] < timeRange[0] || timestamps[i] > timeRange[1]) continue;
+
+            let value = prices[i];
+            if (viewMode === "indexed") {
+              value = computeIndexedPrice(prices[i], basisPrice);
+            } else if (viewMode === "log-return") {
+              value = Math.log(prices[i] / basisPrice) * 100;
+            }
+
+            seriesData.push({ time: Math.floor(timestamps[i]), value });
+          }
+
+          const color = getColor(ticker);
+          const lineSeries = chart.addLineSeries({
+            color: color,
+            lineWidth: 2,
+            title: getDisplayName(ticker)
+          });
+
+          lineSeries.setData(seriesData);
+          chart.timeScale().fitContent();
+
+          const alarmPrice = getPriceAlarm(ticker);
+          seriesEntries.push({
+            ticker,
+            name: getDisplayName(ticker),
+            series: lineSeries,
+            visible: isSelected,
+            prices,
+            timestamps,
+            basisPrice,
+            color,
+            alarm: alarmPrice
+          });
+        }
+
+        // MACD rendering
+        if (showMACD && getSelectedSeries().length === 1) {
+          const selectedSeries = getSelectedSeries()[0];
+          const entry = dataset[selectedSeries.ticker];
+
+          if (entry && entry.data && entry.data.length > macdParams.slow) {
+            const macdResult = calculateMACD(entry.data);
+
+            if (macdResult) {
+              const { macdLine, signalLine, histogram } = macdResult;
+              const startIdx = entry.data.length - macdLine.length;
+              const macdSeriesData = [];
+              const signalSeriesData = [];
+              const histogramSeriesData = [];
+
+              for (let i = 0; i < macdLine.length; i++) {
+                const idx = startIdx + i;
+                const ts = entry.timestamps[idx];
+                if (ts < timeRange[0] || ts > timeRange[1]) continue;
+
+                macdSeriesData.push({ time: Math.floor(ts), value: macdLine[i] });
+                signalSeriesData.push({ time: Math.floor(ts), value: signalLine[i] });
+                histogramSeriesData.push({ time: Math.floor(ts), value: histogram[i], color: histogram[i] >= 0 ? "#16a34a" : "#dc2626" });
+              }
+
+              const macdLineSeries = macdChart.addLineSeries({
+                color: "#2563eb",
+                lineWidth: 1.5,
+                title: "MACD"
+              });
+              macdLineSeries.setData(macdSeriesData);
+
+              const signalLineSeries = macdChart.addLineSeries({
+                color: "#ea580c",
+                lineWidth: 1.5,
+                title: "Signal"
+              });
+              signalLineSeries.setData(signalSeriesData);
+
+              const histogramSeries = macdChart.addHistogramSeries({
+                title: "Histogram"
+              });
+              histogramSeries.setData(histogramSeriesData);
+
+              macdChart.timeScale().fitContent();
+
+              document.getElementById("macd-shell").classList.add("visible");
+            }
+          }
+        } else {
+          document.getElementById("macd-shell").classList.remove("visible");
+        }
+
+        renderLegend(selected, timeRange, cutoffTime, rangeMs);
+      }, 100);
     }
 
-    window.addEventListener("DOMContentLoaded", () => {
-      initEventListeners();
-      setupResizeObserver();
-      loadData();
+    function renderLegend(selected, timeRange, cutoffTime, rangeMs) {
+      const legendContainer = document.getElementById("legend");
+      if (selected.length === 0) {
+        legendContainer.innerHTML = "";
+        return;
+      }
 
-      setInterval(() => {
-        if (!fetchInProgress) loadData();
-      }, AUTO_REFRESH_MS);
+      legendContainer.innerHTML = selected
+        .map((entry) => {
+          let latestPrice = entry.prices[entry.prices.length - 1];
+          let change = ((latestPrice - entry.basisPrice) / entry.basisPrice) * 100;
+
+          if (getViewMode() === "price") {
+            change = ((latestPrice - entry.basisPrice) / entry.basisPrice) * 100;
+          } else if (getViewMode() === "indexed") {
+            latestPrice = computeIndexedPrice(latestPrice, entry.basisPrice);
+            change = latestPrice - 100;
+          } else if (getViewMode() === "log-return") {
+            latestPrice = Math.log(latestPrice / entry.basisPrice) * 100;
+            change = latestPrice;
+          }
+
+          const changeText = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+          const changeColor = change >= 0 ? "#16a34a" : "#dc2626";
+
+          return `
+            <div class="legend-item">
+              <div class="legend-title">
+                <div class="legend-swatch" style="background-color: ${entry.color};"></div>
+                <strong>${entry.ticker}</strong>
+                <span class="legend-timestamp" style="color: ${changeColor};">${changeText}</span>
+              </div>
+              <div class="legend-price">${formatActualPrice(latestPrice)}</div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    async function handleCommodityClick(ticker) {
+      if (!dataset || !dataset[ticker]) return;
+
+      const entry = seriesEntries.find((e) => e.ticker === ticker);
+      if (!entry) return;
+
+      if (alarmPickMode) {
+        const prices = entry.prices;
+        const logPrice = Math.log(Math.max(prices[prices.length - 1], 0.01));
+        const alarm = {
+          price: prices[prices.length - 1],
+          direction: "above",
+          createdAt: new Date().toISOString(),
+          triggered: false
+        };
+
+        const alarms = loadPriceAlarms();
+        alarms[ticker] = alarm;
+        savePriceAlarms(alarms);
+
+        const url = getGitHubAlarmUrl(entry, alarm);
+        window.open(url, "_blank");
+
+        alarmPickMode = false;
+        updateAlarmButtons();
+        renderChart();
+      } else if (comparisonPickMode) {
+        // Comparison point logic can be added here
+      } else {
+        entry.visible = !entry.visible;
+        renderChart();
+        updateAlarmButtons();
+      }
+    }
+
+    function renderCommoditySidebar() {
+      const container = document.getElementById("commodity-groups");
+      container.innerHTML = "";
+
+      for (const [groupName, commodities] of Object.entries(COMMODITY_GROUPS)) {
+        const groupDiv = document.createElement("div");
+        groupDiv.className = "commodity-group";
+
+        const groupTitle = document.createElement("div");
+        groupTitle.className = "group-title";
+        const groupButton = document.createElement("button");
+        groupButton.type = "button";
+        groupButton.textContent = groupName;
+        groupButton.addEventListener("click", () => {
+          const visibleCommodities = commodities.filter((c) => {
+            const entry = seriesEntries.find((e) => e.ticker === c.ticker);
+            return !entry || !entry.visible;
+          });
+
+          if (visibleCommodities.length === 0) {
+            commodities.forEach((c) => {
+              const entry = seriesEntries.find((e) => e.ticker === c.ticker);
+              if (entry) entry.visible = false;
+            });
+          } else {
+            visibleCommodities.forEach((c) => {
+              const entry = seriesEntries.find((e) => e.ticker === c.ticker);
+              if (entry) entry.visible = true;
+            });
+          }
+
+          renderChart();
+          updateAlarmButtons();
+        });
+
+        groupTitle.appendChild(groupButton);
+        groupDiv.appendChild(groupTitle);
+
+        const listDiv = document.createElement("div");
+        listDiv.className = "commodity-list";
+
+        for (const commodity of commodities) {
+          const itemDiv = document.createElement("div");
+          itemDiv.className = "commodity-item";
+          itemDiv.style.setProperty("--series-color", getColor(commodity.ticker));
+
+          const entry = seriesEntries.find((e) => e.ticker === commodity.ticker);
+          if (entry?.visible) itemDiv.style.background = "#dbeafe";
+
+          itemDiv.addEventListener("click", () => handleCommodityClick(commodity.ticker));
+
+          const nameDiv = document.createElement("div");
+          nameDiv.className = "commodity-name";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = commodity.nameDe || commodity.name;
+
+          const tickerSpan = document.createElement("span");
+          tickerSpan.className = "ticker";
+          tickerSpan.textContent = commodity.ticker;
+
+          nameDiv.appendChild(nameSpan);
+          nameDiv.appendChild(document.createElement("br"));
+          nameDiv.appendChild(tickerSpan);
+
+          itemDiv.appendChild(nameDiv);
+
+          if (entry?.alarm) {
+            const alarmDiv = document.createElement("div");
+            alarmDiv.className = "commodity-percentile";
+            alarmDiv.textContent = "🔔";
+            alarmDiv.style.color = "#ea580c";
+            itemDiv.appendChild(alarmDiv);
+          }
+
+          listDiv.appendChild(itemDiv);
+        }
+
+        groupDiv.appendChild(listDiv);
+        container.appendChild(groupDiv);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("default-selection").addEventListener("click", () => {
+        seriesEntries.forEach((e) => {
+          e.visible = DEFAULT_TICKERS.includes(e.ticker);
+        });
+        renderChart();
+        updateAlarmButtons();
+      });
+
+      document.getElementById("select-all").addEventListener("click", () => {
+        seriesEntries.forEach((e) => {
+          e.visible = true;
+        });
+        renderChart();
+        updateAlarmButtons();
+      });
+
+      document.getElementById("clear-all").addEventListener("click", () => {
+        seriesEntries.forEach((e) => {
+          e.visible = false;
+        });
+        renderChart();
+        updateAlarmButtons();
+      });
+
+      document.querySelectorAll(".period-button").forEach((btn) => {
+        btn.addEventListener("click", handlePeriodChange);
+      });
+
+      document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
+        radio.addEventListener("change", handleModeChange);
+      });
+
+      document.getElementById("basis-button").addEventListener("click", handleBasisButtonClick);
+      document.getElementById("basis-apply").addEventListener("click", handleBasisApply);
+      document.getElementById("basis-cancel").addEventListener("click", () => {
+        document.getElementById("basis-dialog").close();
+      });
+
+      document.getElementById("comparison-point").addEventListener("click", handleComparisonPointClick);
+      document.getElementById("set-price-alarm").addEventListener("click", handlePriceAlarmClick);
+      document.getElementById("clear-price-alarm").addEventListener("click", handleClearPriceAlarm);
+
+      document.getElementById("toggle-macd").addEventListener("click", handleToggleMACD);
+      document.getElementById("macd-settings-button").addEventListener("click", handleMACSSettingsClick);
+      document.getElementById("macd-close").addEventListener("click", handleMACSSettingsClose);
+
+      document.getElementById("toggle-events").addEventListener("click", handleEventToggle);
+      document.getElementById("show-correlation").addEventListener("click", handleCorrelationClick);
+      document.getElementById("correlation-close").addEventListener("click", () => {
+        document.getElementById("correlation-dialog").close();
+      });
+
+      document.getElementById("fullscreen-toggle").addEventListener("click", handleFullscreenToggle);
+
+      macdParams = loadMACD();
+      initChart();
+      setInterval(renderCommoditySidebar, 500);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (e.target.id !== "chart") return;
+
+      if (comparisonPickMode) {
+        const coords = chart.timeScale().getVisibleLogicalRange();
+        console.log("Comparison point clicked:", coords);
+        comparisonPickMode = false;
+        document.getElementById("comparison-point").classList.remove("active-tool");
+        document.getElementById("comparison-point").textContent = "Vergleichspunkt wählen";
+      }
+
+      if (alarmPickMode) {
+        const coords = chart.timeScale().getVisibleLogicalRange();
+        console.log("Alarm price set at logical range:", coords);
+      }
     });
   </script>
 </body>
+
 </html>
