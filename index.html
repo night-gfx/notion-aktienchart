@@ -218,7 +218,22 @@
     }
 
     .commodity-percentile {
-      flex: 0 0 70px;
+      flex: 0 0 auto;
+      padding: 3px 5px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .commodity-indicators {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 4px;
+    }
+
+    .commodity-macd {
+      min-width: 48px;
       padding: 3px 5px;
       border-radius: 4px;
       font-size: 11px;
@@ -734,7 +749,7 @@
         </label>
       </div>
       <div class="dialog-actions">
-        <button id="macd-close" type="button">Schließen</button>
+        <button id="macd-close" type="button">Übernehmen</button>
       </div>
     </div>
   </dialog>
@@ -938,7 +953,7 @@
     let alarmPickMode = false;
     let showEvents = false;
     let githubAlarmsLoaded = false;
-    let showMACD = false;
+    let showMACD = true;
     let macdSeriesEntries = [];
 
     const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
@@ -1001,46 +1016,62 @@
     }
 
     function calculateEMA(prices, period) {
-      if (prices.length < period) return null;
+      const result = Array(prices.length).fill(null);
+      if (prices.length < period) return result;
       const k = 2 / (period + 1);
       let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-      const result = [ema];
+      result[period - 1] = ema;
       for (let i = period; i < prices.length; i++) {
         ema = prices[i] * k + ema * (1 - k);
-        result.push(ema);
+        result[i] = ema;
       }
       return result;
     }
 
     function calculateMACD(prices) {
       const { fast, slow, signal } = macdParams;
-      if (prices.length < slow) return null;
-
+      if (prices.length < slow + signal) return null;
       const fastEMA = calculateEMA(prices, fast);
       const slowEMA = calculateEMA(prices, slow);
-
-      if (!fastEMA || !slowEMA) return null;
-
-      const macdLine = [];
-      const signalLine = [];
-      const histogram = [];
-
-      for (let i = slow - 1; i < prices.length; i++) {
-        const idx = i - (slow - 1);
-        macdLine.push(fastEMA[idx + (fast - slow)] - slowEMA[idx]);
-      }
-
-      const signalEMA = calculateEMA(macdLine, signal);
-      if (signalEMA) {
-        for (let i = 0; i < macdLine.length; i++) {
-          const idx = Math.max(0, i - (macdLine.length - signalEMA.length));
-          const sig = signalEMA[idx];
-          signalLine.push(sig);
-          histogram.push(macdLine[i] - sig);
+      const macdLine = prices.map((_, index) =>
+        fastEMA[index] !== null && slowEMA[index] !== null
+          ? fastEMA[index] - slowEMA[index]
+          : null
+      );
+      const firstMACDIndex = macdLine.findIndex((value) => value !== null);
+      const validMACD = macdLine.slice(firstMACDIndex);
+      const validSignal = calculateEMA(validMACD, signal);
+      const signalLine = Array(prices.length).fill(null);
+      const histogram = Array(prices.length).fill(null);
+      validSignal.forEach((value, index) => {
+        if (value !== null) {
+          const targetIndex = firstMACDIndex + index;
+          signalLine[targetIndex] = value;
+          histogram[targetIndex] = macdLine[targetIndex] - value;
         }
-      }
+      });
 
       return { macdLine, signalLine, histogram };
+    }
+
+    function getMACDStrength(prices) {
+      const result = calculateMACD(prices);
+      if (!result) return NaN;
+      const values = result.histogram.filter(Number.isFinite);
+      if (!values.length) return NaN;
+      const recent = values.slice(-100);
+      const scale = Math.max(...recent.map((value) => Math.abs(value)));
+      if (!Number.isFinite(scale) || scale === 0) return 0;
+      return Math.max(-1, Math.min(1, recent[recent.length - 1] / scale));
+    }
+
+    function getPricePercentile(prices) {
+      const valid = prices.filter((value) => Number.isFinite(value) && value > 0);
+      if (!valid.length) return NaN;
+      const latest = valid[valid.length - 1];
+      const below = valid.filter((value) => value < latest).length;
+      const equal = valid.filter((value) => value === latest).length;
+      return ((below + equal / 2) / valid.length) * 100;
     }
 
     function updateAlarmButtons() {
@@ -1060,7 +1091,8 @@
       clearButton.disabled = !alarm;
 
       macdButton.disabled = !oneSelected;
-      macdSettingsButton.disabled = !oneSelected;
+      macdSettingsButton.disabled = false;
+      macdButton.textContent = showMACD ? "MACD ausblenden" : "MACD anzeigen";
     }
 
     function getGitHubAlarmUrl(series, alarm) {
@@ -1443,6 +1475,20 @@
         timeScale: { timeVisible: false, secondsVisible: false }
       });
 
+      let syncingTimeRange = false;
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (!range || syncingTimeRange || !showMACD) return;
+        syncingTimeRange = true;
+        macdChart.timeScale().setVisibleLogicalRange(range);
+        syncingTimeRange = false;
+      });
+      macdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (!range || syncingTimeRange || !showMACD) return;
+        syncingTimeRange = true;
+        chart.timeScale().setVisibleLogicalRange(range);
+        syncingTimeRange = false;
+      });
+
       resizeObserver = new ResizeObserver(() => {
         const w = chartContainer.clientWidth;
         const h = chartContainer.clientHeight;
@@ -1469,8 +1515,25 @@
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        dataset = await response.json();
-        syncPriceAlarmsFromGitHub();
+        const payload = await response.json();
+        const previousSelection = new Set(
+          seriesEntries.filter((entry) => entry.visible).map((entry) => entry.ticker)
+        );
+        dataset = Object.fromEntries((payload.series || []).map((series) => [
+          series.ticker,
+          {
+            ...series,
+            data: (series.data || []).map((point) => Number(point[1])),
+            timestamps: (series.data || []).map((point) => parseTimestamp(point[0]))
+          }
+        ]));
+        seriesEntries = Object.keys(dataset).map((ticker) => ({
+          ticker,
+          visible: previousSelection.size
+            ? previousSelection.has(ticker)
+            : DEFAULT_TICKERS.includes(ticker)
+        }));
+        await syncPriceAlarmsFromGitHub();
         macdParams = loadMACD();
 
         await renderChart();
@@ -1494,8 +1557,15 @@
       renderTimer = setTimeout(async () => {
         if (!chart) return;
 
-        chart.removeAllSeries();
-        macdChart?.removeAllSeries();
+        const selectedTickers = new Set(
+          seriesEntries.filter((entry) => entry.visible).map((entry) => entry.ticker)
+        );
+        seriesEntries.forEach((entry) => {
+          if (entry.series) chart.removeSeries(entry.series);
+        });
+        macdSeriesEntries.forEach((entry) => {
+          if (entry.series) macdChart.removeSeries(entry.series);
+        });
         seriesEntries = [];
         macdSeriesEntries = [];
 
@@ -1517,7 +1587,7 @@
         })();
 
         const viewMode = getViewMode();
-        const selected = getSelectedSeries();
+        const selected = [...selectedTickers];
 
         let earliestTime = Infinity;
         for (const [ticker, entry] of Object.entries(dataset)) {
@@ -1529,7 +1599,7 @@
         const timeRange = [Math.max(cutoffTime, earliestTime), Date.now() / 1000];
 
         for (const [ticker, entry] of Object.entries(dataset)) {
-          const isSelected = getSelectedSeries().some((s) => s.ticker === ticker);
+          const isSelected = selectedTickers.has(ticker);
 
           if (!entry.timestamps || entry.timestamps.length === 0) continue;
 
@@ -1537,6 +1607,18 @@
           let timestamps = entry.timestamps || [];
 
           if (!prices || !timestamps || prices.length === 0) continue;
+          if (!isSelected) {
+            seriesEntries.push({
+              ticker,
+              name: getDisplayName(ticker),
+              visible: false,
+              prices,
+              timestamps,
+              color: getColor(ticker),
+              alarm: getPriceAlarm(ticker)
+            });
+            continue;
+          }
 
           let basisDate = indexBasisKey === "custom" ? customBasisDate : indexBasisKey;
 
@@ -1583,7 +1665,7 @@
           }
 
           const color = getColor(ticker);
-          const lineSeries = chart.addLineSeries({
+          const lineSeries = chart.addSeries(LightweightCharts.LineSeries, {
             color: color,
             lineWidth: 2,
             title: getDisplayName(ticker)
@@ -1607,59 +1689,71 @@
         }
 
         // MACD rendering
-        if (showMACD && getSelectedSeries().length === 1) {
-          const selectedSeries = getSelectedSeries()[0];
-          const entry = dataset[selectedSeries.ticker];
+        document.getElementById("macd-shell").classList.remove("visible");
+        if (showMACD && selectedTickers.size === 1) {
+          const selectedTicker = [...selectedTickers][0];
+          const entry = dataset[selectedTicker];
 
           if (entry && entry.data && entry.data.length > macdParams.slow) {
             const macdResult = calculateMACD(entry.data);
 
             if (macdResult) {
               const { macdLine, signalLine, histogram } = macdResult;
-              const startIdx = entry.data.length - macdLine.length;
               const macdSeriesData = [];
               const signalSeriesData = [];
               const histogramSeriesData = [];
 
               for (let i = 0; i < macdLine.length; i++) {
-                const idx = startIdx + i;
-                const ts = entry.timestamps[idx];
+                const ts = entry.timestamps[i];
                 if (ts < timeRange[0] || ts > timeRange[1]) continue;
-
-                macdSeriesData.push({ time: Math.floor(ts), value: macdLine[i] });
-                signalSeriesData.push({ time: Math.floor(ts), value: signalLine[i] });
-                histogramSeriesData.push({ time: Math.floor(ts), value: histogram[i], color: histogram[i] >= 0 ? "#16a34a" : "#dc2626" });
+                if (Number.isFinite(macdLine[i])) {
+                  macdSeriesData.push({ time: Math.floor(ts), value: macdLine[i] });
+                }
+                if (Number.isFinite(signalLine[i])) {
+                  signalSeriesData.push({ time: Math.floor(ts), value: signalLine[i] });
+                }
+                if (Number.isFinite(histogram[i])) {
+                  histogramSeriesData.push({
+                    time: Math.floor(ts),
+                    value: histogram[i],
+                    color: histogram[i] >= 0 ? "#16a34a" : "#dc2626"
+                  });
+                }
               }
 
-              const macdLineSeries = macdChart.addLineSeries({
+              const macdLineSeries = macdChart.addSeries(LightweightCharts.LineSeries, {
                 color: "#2563eb",
-                lineWidth: 1.5,
+                lineWidth: 2,
                 title: "MACD"
               });
               macdLineSeries.setData(macdSeriesData);
+              macdSeriesEntries.push({ series: macdLineSeries });
 
-              const signalLineSeries = macdChart.addLineSeries({
+              const signalLineSeries = macdChart.addSeries(LightweightCharts.LineSeries, {
                 color: "#ea580c",
-                lineWidth: 1.5,
+                lineWidth: 2,
                 title: "Signal"
               });
               signalLineSeries.setData(signalSeriesData);
+              macdSeriesEntries.push({ series: signalLineSeries });
 
-              const histogramSeries = macdChart.addHistogramSeries({
+              const histogramSeries = macdChart.addSeries(LightweightCharts.HistogramSeries, {
                 title: "Histogram"
               });
               histogramSeries.setData(histogramSeriesData);
+              macdSeriesEntries.push({ series: histogramSeries });
 
-              macdChart.timeScale().fitContent();
+              const visibleRange = chart.timeScale().getVisibleLogicalRange();
+              if (visibleRange) macdChart.timeScale().setVisibleLogicalRange(visibleRange);
 
               document.getElementById("macd-shell").classList.add("visible");
             }
           }
-        } else {
-          document.getElementById("macd-shell").classList.remove("visible");
         }
 
-        renderLegend(selected, timeRange, cutoffTime, rangeMs);
+        renderLegend(getSelectedSeries(), timeRange, cutoffTime, rangeMs);
+        renderCommoditySidebar();
+        updateAlarmButtons();
       }, 100);
     }
 
@@ -1804,9 +1898,49 @@
 
           itemDiv.appendChild(nameDiv);
 
+          const indicatorsDiv = document.createElement("div");
+          indicatorsDiv.className = "commodity-indicators";
+          const dataEntry = dataset?.[commodity.ticker];
+          const percentile = dataEntry ? getPricePercentile(dataEntry.data) : NaN;
+          const percentileDiv = document.createElement("div");
+          percentileDiv.className = "commodity-percentile";
+          percentileDiv.textContent = Number.isFinite(percentile)
+            ? `${percentile.toFixed(1).replace(".", ",")} %`
+            : "–";
+          const percentileHue = Number.isFinite(percentile)
+            ? 120 - Math.max(0, Math.min(100, percentile)) * 1.2
+            : 0;
+          percentileDiv.style.background = Number.isFinite(percentile)
+            ? `hsl(${percentileHue} 72% 82%)`
+            : "#f1f5f9";
+          percentileDiv.style.color = Number.isFinite(percentile)
+            ? `hsl(${percentileHue} 72% 24%)`
+            : "#64748b";
+
+          const macdStrength = dataEntry ? getMACDStrength(dataEntry.data) : NaN;
+          const macdDiv = document.createElement("div");
+          macdDiv.className = "commodity-macd";
+          macdDiv.title = `MACD ${macdParams.fast}/${macdParams.slow}/${macdParams.signal}`;
+          macdDiv.textContent = Number.isFinite(macdStrength)
+            ? macdStrength.toFixed(2).replace(".", ",")
+            : "–";
+          const macdIntensity = Number.isFinite(macdStrength)
+            ? Math.abs(macdStrength)
+            : 0;
+          const macdHue = macdStrength >= 0 ? 135 : 0;
+          macdDiv.style.background = Number.isFinite(macdStrength)
+            ? `hsl(${macdHue} 65% ${94 - macdIntensity * 20}%)`
+            : "#f1f5f9";
+          macdDiv.style.color = Number.isFinite(macdStrength)
+            ? `hsl(${macdHue} 70% 25%)`
+            : "#64748b";
+
+          indicatorsDiv.append(percentileDiv, macdDiv);
+          itemDiv.appendChild(indicatorsDiv);
+
           if (entry?.alarm) {
             const alarmDiv = document.createElement("div");
-            alarmDiv.className = "commodity-percentile";
+            alarmDiv.className = "commodity-macd";
             alarmDiv.textContent = "🔔";
             alarmDiv.style.color = "#ea580c";
             itemDiv.appendChild(alarmDiv);
@@ -1876,8 +2010,9 @@
       document.getElementById("fullscreen-toggle").addEventListener("click", handleFullscreenToggle);
 
       macdParams = loadMACD();
+      document.getElementById("toggle-macd").classList.toggle("active-tool", showMACD);
+      renderCommoditySidebar();
       initChart();
-      setInterval(renderCommoditySidebar, 500);
     });
 
     document.addEventListener("click", (e) => {
