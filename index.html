@@ -255,11 +255,74 @@
       flex-direction: column;
     }
 
-    .chart-shell {
-      position: relative;
+    .primary-charts {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 34%);
       flex: 1 1 auto;
       min-height: 0;
+    }
+
+    .chart-shell {
+      position: relative;
+      min-height: 0;
       background: #ffffff;
+    }
+
+    .forward-panel {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      border-left: 1px solid var(--border);
+      background: #ffffff;
+    }
+
+    .forward-header {
+      flex: 0 0 auto;
+      padding: 10px 12px 5px;
+    }
+
+    .forward-title {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .forward-summary,
+    .forward-note {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.3;
+    }
+
+    .forward-chart {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 190px;
+      overflow: hidden;
+    }
+
+    .forward-chart svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .forward-tooltip {
+      position: absolute;
+      z-index: 3;
+      display: none;
+      max-width: 210px;
+      padding: 6px 7px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.97);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+      color: #1e293b;
+      font-size: 10px;
+      line-height: 1.4;
+      pointer-events: none;
     }
 
     .macd-shell {
@@ -573,6 +636,18 @@
         flex: 0 0 100px;
       }
     }
+
+    @media (max-width: 1000px) {
+      .primary-charts {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(300px, 1fr) 280px;
+        overflow-y: auto;
+      }
+      .forward-panel {
+        border-top: 1px solid var(--border);
+        border-left: 0;
+      }
+    }
   </style>
 </head>
 
@@ -634,7 +709,8 @@
       </aside>
 
       <section class="chart-container">
-        <div class="chart-shell">
+        <div class="primary-charts">
+          <div class="chart-shell">
           <div id="chart"></div>
           <div id="legend" class="legend"></div>
           <div class="chart-tools">
@@ -648,6 +724,18 @@
             </a>
             · Lightweight Charts™
           </div>
+          </div>
+
+          <aside class="forward-panel" aria-labelledby="forward-title">
+            <div class="forward-header">
+              <h2 id="forward-title" class="forward-title">Perzentil vs. max. 12M-Return</h2>
+              <p id="forward-summary" class="forward-summary">Ausgewählte Rohstoffe werden analysiert.</p>
+              <p class="forward-note">Wochenwerte · Perzentil nur aus damaliger Historie · vollständige 12 Monate</p>
+            </div>
+            <div id="forward-chart" class="forward-chart" role="img" aria-label="Streudiagramm von historischem Preisperzentil und maximalem Return der folgenden zwölf Monate">
+              <div id="forward-tooltip" class="forward-tooltip"></div>
+            </div>
+          </aside>
         </div>
 
         <div id="macd-shell" class="macd-shell">
@@ -955,6 +1043,7 @@
     let githubAlarmsLoaded = false;
     let showMACD = true;
     let macdSeriesEntries = [];
+    let forwardResizeObserver = null;
 
     const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
     const MACD_STORAGE_KEY = "macd-settings-v1";
@@ -1072,6 +1161,209 @@
       const below = valid.filter((value) => value < latest).length;
       const equal = valid.filter((value) => value === latest).length;
       return ((below + equal / 2) / valid.length) * 100;
+    }
+
+    function lowerBound(sorted, value) {
+      let low = 0;
+      let high = sorted.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (sorted[middle] < value) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    }
+
+    function upperBound(sorted, value) {
+      let low = 0;
+      let high = sorted.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (sorted[middle] <= value) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    }
+
+    function calculateForwardReturnPoints(entry, ticker) {
+      if (entry.forwardReturnPoints) return entry.forwardReturnPoints;
+      const weekly = (entry.weekly_data || [])
+        .map((point) => ({
+          date: point[0],
+          time: parseTimestamp(point[0]),
+          price: Number(point[1])
+        }))
+        .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price) && point.price > 0);
+      if (weekly.length < 105) {
+        entry.forwardReturnPoints = [];
+        return entry.forwardReturnPoints;
+      }
+
+      const horizonSeconds = 365 * 24 * 60 * 60;
+      const lastTime = weekly[weekly.length - 1].time;
+      const sortedHistory = [];
+      const points = [];
+
+      for (let index = 0; index < weekly.length; index++) {
+        const current = weekly[index];
+        const lower = lowerBound(sortedHistory, current.price);
+        const upper = upperBound(sortedHistory, current.price);
+        const equalIncludingCurrent = upper - lower + 1;
+        const percentile = ((lower + equalIncludingCurrent / 2) / (sortedHistory.length + 1)) * 100;
+        sortedHistory.splice(upper, 0, current.price);
+
+        if (index < 51 || current.time + horizonSeconds > lastTime) continue;
+        let futureMaximum = -Infinity;
+        for (let futureIndex = index + 1; futureIndex < weekly.length; futureIndex++) {
+          const future = weekly[futureIndex];
+          if (future.time > current.time + horizonSeconds) break;
+          futureMaximum = Math.max(futureMaximum, future.price);
+        }
+        if (!Number.isFinite(futureMaximum)) continue;
+        points.push({
+          ticker,
+          date: current.date,
+          percentile,
+          returnValue: ((futureMaximum / current.price) - 1) * 100
+        });
+      }
+      entry.forwardReturnPoints = points;
+      return entry.forwardReturnPoints;
+    }
+
+    function calculateForwardStatistics(points) {
+      if (points.length < 2) return { correlation: NaN, slope: 0, intercept: 0 };
+      const meanX = points.reduce((sum, point) => sum + point.percentile, 0) / points.length;
+      const meanY = points.reduce((sum, point) => sum + point.returnValue, 0) / points.length;
+      let covariance = 0;
+      let varianceX = 0;
+      let varianceY = 0;
+      points.forEach((point) => {
+        const dx = point.percentile - meanX;
+        const dy = point.returnValue - meanY;
+        covariance += dx * dy;
+        varianceX += dx * dx;
+        varianceY += dy * dy;
+      });
+      const slope = varianceX ? covariance / varianceX : 0;
+      return {
+        correlation: varianceX && varianceY ? covariance / Math.sqrt(varianceX * varianceY) : NaN,
+        slope,
+        intercept: meanY - slope * meanX
+      };
+    }
+
+    function renderForwardReturnChart(selectedTickers) {
+      const container = document.getElementById("forward-chart");
+      const summary = document.getElementById("forward-summary");
+      const tooltip = document.getElementById("forward-tooltip");
+      if (!container || !summary || !tooltip || !dataset) return;
+
+      container.querySelector("svg")?.remove();
+      tooltip.style.display = "none";
+      const tickers = [...selectedTickers];
+      if (!tickers.length) {
+        summary.textContent = "Keine Reihe ausgewählt.";
+        return;
+      }
+
+      const points = tickers.flatMap((ticker) => calculateForwardReturnPoints(dataset[ticker], ticker));
+      if (!points.length) {
+        summary.textContent = "Zu wenig Historie für eine vollständige Analyse.";
+        return;
+      }
+
+      const stats = calculateForwardStatistics(points);
+      const correlationText = Number.isFinite(stats.correlation)
+        ? stats.correlation.toFixed(2).replace(".", ",")
+        : "–";
+      summary.textContent = `Pearson r = ${correlationText} · n = ${points.length.toLocaleString("de-DE")}`;
+      container.setAttribute(
+        "aria-label",
+        `Streudiagramm: historisches Preisperzentil gegen maximalen Return der folgenden zwölf Monate. Pearson r ${correlationText}, ${points.length} Wochenpunkte.`
+      );
+
+      const width = Math.max(280, container.clientWidth);
+      const height = Math.max(190, container.clientHeight);
+      const margin = { top: 10, right: 14, bottom: 38, left: 52 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const returns = points.map((point) => point.returnValue);
+      let yMin = Math.min(0, ...returns);
+      let yMax = Math.max(0, ...returns);
+      const yPadding = Math.max(1, (yMax - yMin) * 0.06);
+      yMin -= yPadding;
+      yMax += yPadding;
+      const xScale = (value) => margin.left + (value / 100) * innerWidth;
+      const yScale = (value) => margin.top + ((yMax - value) / (yMax - yMin || 1)) * innerHeight;
+      const svgNamespace = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(svgNamespace, "svg");
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.setAttribute("aria-hidden", "true");
+
+      const addLine = (x1, y1, x2, y2, stroke, dash = "") => {
+        const line = document.createElementNS(svgNamespace, "line");
+        line.setAttribute("x1", x1);
+        line.setAttribute("y1", y1);
+        line.setAttribute("x2", x2);
+        line.setAttribute("y2", y2);
+        line.setAttribute("stroke", stroke);
+        if (dash) line.setAttribute("stroke-dasharray", dash);
+        svg.appendChild(line);
+      };
+      const addText = (x, y, text, anchor = "middle") => {
+        const label = document.createElementNS(svgNamespace, "text");
+        label.setAttribute("x", x);
+        label.setAttribute("y", y);
+        label.setAttribute("text-anchor", anchor);
+        label.setAttribute("fill", "#64748b");
+        label.setAttribute("font-size", "9");
+        label.textContent = text;
+        svg.appendChild(label);
+        return label;
+      };
+
+      [0, 25, 50, 75, 100].forEach((tick) => {
+        const x = xScale(tick);
+        addLine(x, margin.top, x, margin.top + innerHeight, "#e2e8f0");
+        addText(x, height - 22, String(tick));
+      });
+      for (let index = 0; index <= 4; index++) {
+        const value = yMin + ((yMax - yMin) * index) / 4;
+        const y = yScale(value);
+        addLine(margin.left, y, width - margin.right, y, "#e2e8f0");
+        addText(margin.left - 6, y + 3, `${Math.round(value)} %`, "end");
+      }
+      if (yMin < 0 && yMax > 0) {
+        addLine(margin.left, yScale(0), width - margin.right, yScale(0), "#94a3b8");
+      }
+      addText(margin.left + innerWidth / 2, height - 6, "Historisches Preisperzentil");
+      const yLabel = addText(12, margin.top + innerHeight / 2, "Max. 12M-Return");
+      yLabel.setAttribute("transform", `rotate(-90 12 ${margin.top + innerHeight / 2})`);
+
+      const maxRenderedPoints = 1800;
+      const step = Math.max(1, Math.ceil(points.length / maxRenderedPoints));
+      points.filter((_, index) => index % step === 0).forEach((point) => {
+        const circle = document.createElementNS(svgNamespace, "circle");
+        circle.setAttribute("cx", xScale(point.percentile));
+        circle.setAttribute("cy", yScale(point.returnValue));
+        circle.setAttribute("r", "2.3");
+        circle.setAttribute("fill", getColor(point.ticker));
+        circle.setAttribute("fill-opacity", "0.38");
+        circle.addEventListener("pointerenter", (event) => {
+          tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.date}<br>Perzentil: ${point.percentile.toFixed(1).replace(".", ",")} %<br>Max. 12M-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %`;
+          tooltip.style.display = "block";
+          tooltip.style.left = `${Math.min(width - 215, Math.max(6, event.offsetX + 10))}px`;
+          tooltip.style.top = `${Math.max(6, event.offsetY - 54)}px`;
+        });
+        circle.addEventListener("pointerleave", () => { tooltip.style.display = "none"; });
+        svg.appendChild(circle);
+      });
+
+      const trendStart = stats.intercept;
+      const trendEnd = stats.intercept + stats.slope * 100;
+      addLine(xScale(0), yScale(trendStart), xScale(100), yScale(trendEnd), "#0f172a", "5 4");
+      container.insertBefore(svg, tooltip);
     }
 
     function updateAlarmButtons() {
@@ -1501,6 +1793,15 @@
       });
       resizeObserver.observe(chartContainer);
 
+      const forwardContainer = document.getElementById("forward-chart");
+      forwardResizeObserver = new ResizeObserver(() => {
+        const visibleTickers = new Set(
+          seriesEntries.filter((entry) => entry.visible).map((entry) => entry.ticker)
+        );
+        renderForwardReturnChart(visibleTickers);
+      });
+      forwardResizeObserver.observe(forwardContainer);
+
       await fetchDataAndRender();
     }
 
@@ -1752,6 +2053,7 @@
         }
 
         renderLegend(getSelectedSeries(), timeRange, cutoffTime, rangeMs);
+        renderForwardReturnChart(selectedTickers);
         renderCommoditySidebar();
         updateAlarmButtons();
       }, 100);
