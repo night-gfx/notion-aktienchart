@@ -1,13 +1,4 @@
-"""
-Transform time series data by extracting metadata for dynamic indexing.
-
-For each series, computes and stores:
-- first_price: The first price (base for indexing)
-- base_dates: Key reference dates (1y, 3y, 5y, 10y, 20y before latest)
-
-The browser then computes indexed and log-return values dynamically
-based on the user's selected basis point.
-"""
+"""Add weekly closing prices used by the browser-side analysis charts."""
 
 from __future__ import annotations
 
@@ -19,20 +10,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 INPUT = ROOT / "data" / "commodities.json"
 OUTPUT = ROOT / "data" / "commodities_transformed.json"
-
-
-def subtract_years(date_str: str, years: int) -> str:
-    """Subtract years from a YYYY-MM-DD date string."""
-    parts = date_str.split("-")
-    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-    year -= years
-    return f"{year:04d}-{month:02d}-{day:02d}"
-
-
-def find_closest_date(date_target: str, available_dates: list[str]) -> str | None:
-    """Find the closest date in available_dates that is <= date_target."""
-    matching = [d for d in available_dates if d <= date_target]
-    return matching[-1] if matching else None
 
 
 def weekly_closes(data: list[list[object]]) -> list[list[object]]:
@@ -48,69 +25,15 @@ def weekly_closes(data: list[list[object]]) -> list[list[object]]:
     return list(weeks.values())
 
 
-def transform_series(series: dict[str, Any], latest_date: str) -> dict[str, Any]:
-    """
-    Transform a single series to include metadata for dynamic indexing.
-    
-    Args:
-        series: Dict with "ticker", "name", "group", "data" (list of [date, price])
-        latest_date: The latest date across all series
-    
-    Returns:
-        Enhanced dict with first_price and base_dates for dynamic calculations.
-    """
-    ticker = series.get("ticker", "unknown")
+def transform_series(series: dict[str, Any]) -> dict[str, Any]:
+    """Add weekly closes to one daily time series."""
     data = series.get("data", [])
-    
+
     if not data:
-        return {
-            **series,
-            "first_price": None,
-            "base_dates": {},
-            "weekly_data": [],
-        }
-    
-    # Extract dates
-    available_dates = [date_str for date_str, price in data if float(price) > 0]
-    
-    if not available_dates:
-        print(f"  {ticker}: No valid dates found")
-        return {
-            **series,
-            "first_price": None,
-            "base_dates": {},
-            "weekly_data": [],
-        }
-    
-    # Find first valid price
-    first_price = None
-    for date_str, price in data:
-        price_float = float(price)
-        if price_float > 0:
-            first_price = price_float
-            break
-    
-    if first_price is None:
-        print(f"  {ticker}: No valid first price found")
-        return {
-            **series,
-            "first_price": None,
-            "base_dates": {},
-            "weekly_data": [],
-        }
-    
-    # Compute target dates for common basis points
-    base_dates = {}
-    for years in [1, 3, 5, 10, 20]:
-        target_date = subtract_years(latest_date, years)
-        closest = find_closest_date(target_date, available_dates)
-        if closest:
-            base_dates[f"{years}y"] = closest
-    
+        return {**series, "weekly_data": []}
+
     return {
         **series,
-        "first_price": round(first_price, 8),
-        "base_dates": base_dates,
         "weekly_data": weekly_closes(data),
     }
 
@@ -160,21 +83,15 @@ def main() -> None:
         ticker = series.get("ticker")
         print(f"  Transforming {ticker}...")
         
-        transformed = transform_series(series, latest_date)
+        transformed = transform_series(series)
         transformed_series.append(transformed)
     
     # Build output payload
     output_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "frequency": "daily",
-        "source": "Yahoo Finance via yfinance (with dynamic indexing metadata)",
+        "source": "Yahoo Finance via yfinance",
         "latest_date": latest_date,
-        "indexing_info": {
-            "description": "Browser computes indexed and log_return dynamically",
-            "indexed": "100 × (price / base_price)",
-            "log_return": "100 × ln(price / base_price)",
-            "available_bases": ["display-start", "1y", "3y", "5y", "10y", "20y", "first-common", "custom"]
-        },
         "series": transformed_series,
         "errors": payload.get("errors", []),
     }
@@ -186,7 +103,7 @@ def main() -> None:
     )
     
     print(f"\nWrote {OUTPUT}")
-    print(f"  {len(transformed_series)} series with dynamic indexing metadata")
+    print(f"  {len(transformed_series)} series with weekly closes")
 
 
 if __name__ == "__main__":

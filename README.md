@@ -1,4 +1,4 @@
-# Clean start: Rohstoffvergleich mit Lightweight Charts™
+# Clean start: Rohstoffvergleich mit D3.js
 
 ## This package contains
 
@@ -11,7 +11,7 @@ scripts/update_commodities.py
 ```
 
 - **index.html**: Your GitHub Pages / Notion dashboard.
-- **Lightweight Charts™**: Draws all lines in fixed, different colors.
+- **D3.js / SVG**: Draws the responsive time-series chart with fixed, different colors.
 - **data/commodities.json**: Created by the workflow; it starts empty.
 - **Python updater**: Downloads Yahoo Finance history via yfinance.
 - **One GitHub workflow**: Downloads data, updates the JSON file, and deploys the site.

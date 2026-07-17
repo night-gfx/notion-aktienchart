@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rohstoffvergleich</title>
 
-  <!-- Fixed Lightweight Charts™ version. -->
-  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js?v=20260629b"></script>
+  <!-- Responsive SVG charts rendered with D3. -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 
   <style>
     :root {
@@ -138,11 +138,6 @@
       font-weight: 700;
     }
 
-    .basis-button {
-      min-width: 152px;
-      text-align: left;
-    }
-
     .groups {
       display: grid;
       grid-template-columns: 1fr;
@@ -219,6 +214,7 @@
 
     .commodity-percentile {
       flex: 0 0 auto;
+      min-width: 50px;
       padding: 3px 5px;
       border-radius: 4px;
       font-size: 11px;
@@ -226,13 +222,7 @@
       text-align: center;
     }
 
-    .commodity-indicators {
-      display: flex;
-      flex: 0 0 auto;
-      gap: 4px;
-    }
-
-    .commodity-macd {
+    .commodity-badge {
       min-width: 48px;
       padding: 3px 5px;
       border-radius: 4px;
@@ -257,29 +247,60 @@
 
     .primary-charts {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(300px, 34%);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(240px, 1fr));
       flex: 1 1 auto;
       min-height: 0;
+      overflow: auto;
     }
 
     .chart-shell {
+      display: flex;
       position: relative;
       min-height: 0;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
       background: #ffffff;
     }
 
-    .forward-panel {
+    .forward-panel,
+    .analysis-panel {
       display: flex;
       min-width: 0;
       min-height: 0;
       flex-direction: column;
-      border-left: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
       background: #ffffff;
     }
 
-    .forward-header {
+    .analysis-panel:nth-child(3) {
+      border-right: 1px solid var(--border);
+    }
+
+    .forward-header,
+    .analysis-header {
       flex: 0 0 auto;
       padding: 10px 12px 5px;
+    }
+
+    .forward-heading-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .forward-heading-row input {
+      width: 70px;
+      min-height: 28px;
+      padding: 3px 5px;
+      border: 1px solid #c7d0dd;
+      border-radius: 5px;
+      background: #ffffff;
+      color: var(--text);
+      font: inherit;
+      font-size: 11px;
     }
 
     .forward-title {
@@ -309,6 +330,19 @@
       height: 100%;
     }
 
+    .analysis-chart {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 180px;
+      overflow: hidden;
+    }
+
+    .analysis-chart > svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
     .forward-tooltip {
       position: absolute;
       z-index: 3;
@@ -325,56 +359,59 @@
       pointer-events: none;
     }
 
-    .macd-shell {
+    .chart-body {
       position: relative;
-      flex: 0 0 120px;
-      border-top: 1px solid var(--border);
-      background: #ffffff;
-      display: none;
-    }
-
-    .macd-shell.visible {
-      display: block;
-    }
-
-    .chart-tools {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      z-index: 9;
-    }
-
-    .chart-tools button {
-      background: rgba(255, 255, 255, 0.94);
-    }
-
-    .app.fullscreen-mode .controls,
-    .app.fullscreen-mode .commodity-sidebar {
-      display: none;
-    }
-
-    .app.fullscreen-mode {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      background: #ffffff;
+      flex: 1 1 auto;
+      min-height: 190px;
+      overflow: hidden;
     }
 
     #chart {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 190px;
+    }
+
+    #chart svg {
+      display: block;
       width: 100%;
       height: 100%;
     }
 
-    #macd-chart {
+    .chart-empty {
+      display: grid;
       width: 100%;
       height: 100%;
+      place-items: center;
+      padding: 24px;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      z-index: 8;
+      display: none;
+      min-width: 150px;
+      max-width: 260px;
+      padding: 7px 9px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.97);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+      color: #1e293b;
+      font-size: 11px;
+      line-height: 1.45;
+      pointer-events: none;
     }
 
     .legend {
       position: absolute;
       top: 9px;
       left: 12px;
-      right: 70px;
+      right: 12px;
       z-index: 5;
       display: flex;
       flex-wrap: wrap;
@@ -498,20 +535,6 @@
       flex: 0 0 auto;
     }
 
-    .attribution {
-      position: absolute;
-      right: 8px;
-      bottom: 5px;
-      z-index: 5;
-      color: #64748b;
-      font-size: 10px;
-    }
-
-    .attribution a {
-      color: #2962ff;
-      text-decoration: none;
-    }
-
     .empty-state {
       display: flex;
       align-items: center;
@@ -554,74 +577,11 @@
       line-height: 1.4;
     }
 
-    .basis-options {
-      display: grid;
-      gap: 8px;
-    }
-
-    .basis-option {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 8px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-
-    .basis-option:hover { background: #f8fafc; }
-
-    .custom-date-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-      padding: 8px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      font-size: 13px;
-    }
-
-    input[type="date"] {
-      min-height: 31px;
-      padding: 4px 6px;
-      border: 1px solid #c7d0dd;
-      border-radius: 5px;
-      font: inherit;
-      font-size: 13px;
-    }
-
-    input[type="number"] {
-      min-height: 24px;
-      padding: 3px 5px;
-      border: 1px solid #c7d0dd;
-      border-radius: 4px;
-      font: inherit;
-      font-size: 12px;
-      width: 50px;
-    }
-
     .dialog-actions {
       display: flex;
       justify-content: flex-end;
       gap: 8px;
       margin-top: 16px;
-    }
-
-    .macd-settings {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .macd-settings label {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      white-space: nowrap;
     }
 
     @media (max-width: 700px) {
@@ -632,21 +592,17 @@
         border-bottom: 1px solid var(--border);
       }
       .legend { right: 8px; }
-      .macd-shell {
-        flex: 0 0 100px;
-      }
     }
 
     @media (max-width: 1000px) {
       .primary-charts {
         grid-template-columns: 1fr;
-        grid-template-rows: minmax(300px, 1fr) 280px;
+        grid-template-rows: repeat(4, minmax(260px, auto));
         overflow-y: auto;
       }
-      .forward-panel {
-        border-top: 1px solid var(--border);
-        border-left: 0;
-      }
+      .chart-shell,
+      .forward-panel,
+      .analysis-panel { border-right: 0; border-bottom: 1px solid var(--border); }
     }
   </style>
 </head>
@@ -655,7 +611,6 @@
   <main class="app">
     <section class="controls">
       <div class="toolbar">
-        <button id="default-selection" type="button">Standard-Auswahl</button>
         <button id="select-all" type="button">Alle auswählen</button>
         <button id="clear-all" type="button">Alle abwählen</button>
 
@@ -688,14 +643,8 @@
           </label>
         </div>
 
-        <button id="basis-button" class="basis-button" type="button">
-          Indexbasis: Anzeige-Start
-        </button>
-        <button id="comparison-point" type="button">Vergleichspunkt wählen</button>
         <button id="set-price-alarm" type="button">Preisalarm setzen</button>
         <button id="clear-price-alarm" type="button">Preisalarm löschen</button>
-        <button id="toggle-macd" type="button">MACD anzeigen</button>
-        <button id="macd-settings-button" type="button">MACD-Einst.</button>
         <button id="toggle-events" type="button">Ereignisse</button>
         <button id="show-correlation" type="button">Korrelation</button>
       </div>
@@ -710,98 +659,58 @@
 
       <section class="chart-container">
         <div class="primary-charts">
-          <div class="chart-shell">
-          <div id="chart"></div>
-          <div id="legend" class="legend"></div>
-          <div class="chart-tools">
-            <button id="fullscreen-toggle" type="button">Vollbild</button>
-          </div>
-
-          <div class="attribution">
-            Charts by
-            <a href="https://www.tradingview.com/" target="_blank" rel="noopener nofollow">
-              TradingView
-            </a>
-            · Lightweight Charts™
-          </div>
+          <div class="chart-shell" aria-labelledby="price-title">
+            <div class="analysis-header">
+              <h2 id="price-title" class="forward-title">Preis</h2>
+            </div>
+            <div class="chart-body">
+              <div id="chart" role="img" aria-label="Zeitreihenvergleich der ausgewählten Rohstoffe">
+                <div id="chart-tooltip" class="chart-tooltip"></div>
+              </div>
+              <div id="legend" class="legend"></div>
+            </div>
           </div>
 
           <aside class="forward-panel" aria-labelledby="forward-title">
             <div class="forward-header">
-              <h2 id="forward-title" class="forward-title">Perzentil vs. max. 12M-Return</h2>
+              <div class="forward-heading-row">
+                <h2 id="forward-title" class="forward-title">Preis vs. Forward Return</h2>
+              </div>
               <p id="forward-summary" class="forward-summary">Ausgewählte Rohstoffe werden analysiert.</p>
-              <p class="forward-note">Wochenwerte · Perzentil nur aus damaliger Historie · vollständige 12 Monate</p>
+              <p id="forward-note" class="forward-note">Wochenwerte · Legendenfarben anklicken zum Ein-/Ausblenden</p>
             </div>
-            <div id="forward-chart" class="forward-chart" role="img" aria-label="Streudiagramm von historischem Preisperzentil und maximalem Return der folgenden zwölf Monate">
+            <div id="forward-chart" class="forward-chart" role="img" aria-label="Streudiagramm von historischem Preis und Forward Returns für 1, 3, 6, 12 und 24 Monate">
               <div id="forward-tooltip" class="forward-tooltip"></div>
             </div>
           </aside>
+
+          <section class="analysis-panel" aria-labelledby="signal-title">
+            <div class="analysis-header">
+              <div class="forward-heading-row">
+                <h2 id="signal-title" class="forward-title">X-M-Momentum (0–1) ÷ aktueller Preis</h2>
+                <label class="control-label" for="signal-lookback">
+                  Rückblick:
+                  <input id="signal-lookback" type="number" min="0.2" max="24" step="0.2" value="12" inputmode="decimal">
+                  Monate
+                </label>
+              </div>
+              <p id="signal-summary" class="forward-summary">Durchgezogen: Indikator · gestrichelt: aktueller Preis · Maus oder Klick wählt einen Zeitpunkt.</p>
+            </div>
+            <div id="signal-chart" class="analysis-chart" role="img" aria-label="Indikator aus skaliertem Momentum geteilt durch den aktuellen Preis"></div>
+          </section>
+
+          <section class="analysis-panel" aria-labelledby="signal-forward-title">
+            <div class="analysis-header">
+              <h2 id="signal-forward-title" class="forward-title">Indikator vs. Forward Return</h2>
+              <p id="signal-forward-summary" class="forward-summary">1, 3, 6, 12 und 24 Monate · Legende anklicken zum Filtern.</p>
+            </div>
+            <div id="signal-forward-chart" class="analysis-chart" role="img" aria-label="Streudiagramm aus Momentum-Indikator und Forward Returns für 1, 3, 6, 12 und 24 Monate"></div>
+          </section>
         </div>
 
-        <div id="macd-shell" class="macd-shell">
-          <div id="macd-chart"></div>
-        </div>
       </section>
     </div>
   </main>
-
-  <dialog id="basis-dialog">
-    <form method="dialog" class="dialog-body">
-      <h2 class="dialog-title">Indexbasis festlegen</h2>
-      <p class="dialog-subtitle">
-        Diese Wahl beeinflusst nur <b>Index 100</b> und <b>Log-Performance</b>.
-        Der Anzeigezeitraum oben bleibt davon getrennt.
-      </p>
-
-      <div class="basis-options">
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="display-start" checked>
-          Beginn des Anzeigezeitraums
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="1y">
-          1 Jahr vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="3y">
-          3 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="5y">
-          5 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="10y">
-          10 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="20y">
-          20 Jahre vor dem letzten verfügbaren Kurs
-        </label>
-
-        <label class="basis-option">
-          <input type="radio" name="basis-choice" value="first-common">
-          Erste gemeinsame Beobachtung aller ausgewählten Reihen
-        </label>
-      </div>
-
-      <label class="custom-date-row">
-        <input type="radio" name="basis-choice" value="custom">
-        Eigenes Datum:
-        <input id="custom-basis-date" type="date">
-      </label>
-
-      <div class="dialog-actions">
-        <button id="basis-cancel" type="button">Abbrechen</button>
-        <button id="basis-apply" class="primary" type="button">Übernehmen</button>
-      </div>
-    </form>
-  </dialog>
 
   <dialog id="correlation-dialog">
     <div class="dialog-body">
@@ -816,42 +725,15 @@
     </div>
   </dialog>
 
-  <dialog id="macd-dialog">
-    <div class="dialog-body">
-      <h2 class="dialog-title">MACD-Einstellungen</h2>
-      <p class="dialog-subtitle">
-        Konfiguriere die Parameter für die MACD-Berechnung (nur für 1 ausgewählte Linie aktiv).
-      </p>
-      <div class="macd-settings">
-        <label>
-          Fast EMA:
-          <input id="macd-fast" type="number" min="1" max="100" value="12">
-        </label>
-        <label>
-          Slow EMA:
-          <input id="macd-slow" type="number" min="1" max="200" value="26">
-        </label>
-        <label>
-          Signal:
-          <input id="macd-signal" type="number" min="1" max="100" value="9">
-        </label>
-      </div>
-      <div class="dialog-actions">
-        <button id="macd-close" type="button">Übernehmen</button>
-      </div>
-    </div>
-  </dialog>
-
   <script>
     /*
       Data source:
       The page reads raw data from data/commodities_transformed.json.
       This file contains:
       - data: original prices
-      - first_price: first price (for indexing)
-      - base_dates: reference dates (1y, 3y, etc.)
+      - weekly_data: weekly closing prices for analysis charts
       
-      Browser computes indexed and log_return dynamically based on basis choice.
+      Browser computes indexed and log-return values from the displayed range start.
     */
 
     const COMMODITY_GROUPS = {
@@ -900,7 +782,6 @@
       ]
     };
 
-    const DEFAULT_TICKERS = ["CL=F", "BZ=F", "NG=F", "GC=F", "HG=F", "ZC=F"];
 
     const COLOR_BY_TICKER = {
       "CL=F": "#003f5c", "BZ=F": "#ef5675", "NG=F": "#2f4b7c",
@@ -916,6 +797,70 @@
       "LE=F": "#9b2226", "HE=F": "#bb3e03", "GF=F": "#495057",
       "CO2.L": "#16a34a"
     };
+
+    const FORWARD_HORIZONS = [
+      { months: 1, label: "1M", color: "#2563eb" },
+      { months: 3, label: "3M", color: "#0891b2" },
+      { months: 6, label: "6M", color: "#16a34a" },
+      { months: 12, label: "12M", color: "#ea580c" },
+      { months: 24, label: "24M", color: "#7c3aed" }
+    ];
+    const activeForwardHorizons = new Set(FORWARD_HORIZONS.map((horizon) => horizon.months));
+
+    function getForwardHorizon(months) {
+      return FORWARD_HORIZONS.find((horizon) => horizon.months === months) || FORWARD_HORIZONS[0];
+    }
+
+    function getVisibleForwardHorizons() {
+      return FORWARD_HORIZONS.filter((horizon) => activeForwardHorizons.has(horizon.months));
+    }
+
+    function toggleForwardHorizon(months) {
+      if (activeForwardHorizons.has(months)) {
+        if (activeForwardHorizons.size === 1) return;
+        activeForwardHorizons.delete(months);
+      } else {
+        activeForwardHorizons.add(months);
+      }
+      const selectedTickers = new Set(
+        seriesEntries.filter((entry) => entry.visible).map((entry) => entry.ticker)
+      );
+      renderForwardReturnChart(selectedTickers);
+      renderSignalForwardChart(selectedTickers);
+    }
+
+    function renderForwardHorizonLegend(root, innerWidth) {
+      const slotWidth = innerWidth / FORWARD_HORIZONS.length;
+      FORWARD_HORIZONS.forEach((horizon, index) => {
+        const active = activeForwardHorizons.has(horizon.months);
+        const item = root.append("g")
+          .attr("transform", `translate(${slotWidth * (index + 0.5)},0)`)
+          .attr("role", "button")
+          .attr("tabindex", 0)
+          .attr("aria-label", `${horizon.label}-Return ${active ? "ausblenden" : "einblenden"}`)
+          .attr("aria-pressed", active ? "true" : "false")
+          .style("cursor", "pointer")
+          .style("opacity", active ? 1 : 0.28)
+          .on("click", () => toggleForwardHorizon(horizon.months))
+          .on("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            toggleForwardHorizon(horizon.months);
+          });
+        const hitArea = item.append("rect")
+          .attr("x", -slotWidth / 2 + 2).attr("y", -24)
+          .attr("width", Math.max(30, slotWidth - 4)).attr("height", 22)
+          .attr("rx", 3).attr("fill", "transparent").attr("stroke", "transparent");
+        item.on("focus", () => hitArea.attr("stroke", "#64748b"))
+          .on("blur", () => hitArea.attr("stroke", "transparent"));
+        item.append("circle").attr("cx", -10).attr("cy", -12).attr("r", 3.5).attr("fill", horizon.color);
+        item.append("text").attr("x", -3).attr("y", -9).attr("fill", "#334155").attr("font-size", 10).text(horizon.label);
+        if (!active) {
+          item.append("line").attr("x1", -15).attr("x2", 17).attr("y1", -12).attr("y2", -12)
+            .attr("stroke", "#475569").attr("stroke-width", 1.5);
+        }
+      });
+    }
 
     const ALL_COMMODITIES = Object.values(COMMODITY_GROUPS).flat();
     const AUTO_REFRESH_MS = 60 * 1000;
@@ -1032,29 +977,19 @@
 
     let dataset = null;
     let chart = null;
-    let macdChart = null;
     let seriesEntries = [];
     let resizeObserver = null;
     let fetchInProgress = false;
     let renderTimer = null;
-    let comparisonPickMode = false;
     let alarmPickMode = false;
     let showEvents = false;
     let githubAlarmsLoaded = false;
-    let showMACD = true;
-    let macdSeriesEntries = [];
     let forwardResizeObserver = null;
 
     const PRICE_ALARM_STORAGE_KEY = "commodity-price-alarms-v1";
-    const MACD_STORAGE_KEY = "macd-settings-v1";
     const GITHUB_REPOSITORY = "night-gfx/notion-aktienchart";
 
     let displayRangeKey = "all";
-    let indexBasisKey = "display-start";
-    let customBasisDate = "";
-
-    let macdParams = { fast: 12, slow: 26, signal: 9 };
-
     function getColor(ticker) {
       return COLOR_BY_TICKER[ticker] || "#1d4ed8";
     }
@@ -1090,156 +1025,161 @@
       return loadPriceAlarms()[ticker] || null;
     }
 
-    function loadMACD() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(MACD_STORAGE_KEY) || "{}");
-        return { ...macdParams, ...saved };
-      } catch (error) {
-        return macdParams;
-      }
-    }
-
-    function saveMACD(params) {
-      localStorage.setItem(MACD_STORAGE_KEY, JSON.stringify(params));
-      macdParams = params;
-    }
-
-    function calculateEMA(prices, period) {
-      const result = Array(prices.length).fill(null);
-      if (prices.length < period) return result;
-      const k = 2 / (period + 1);
-      let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-      result[period - 1] = ema;
-      for (let i = period; i < prices.length; i++) {
-        ema = prices[i] * k + ema * (1 - k);
-        result[i] = ema;
-      }
-      return result;
-    }
-
-    function calculateMACD(prices) {
-      const { fast, slow, signal } = macdParams;
-      if (prices.length < slow + signal) return null;
-      const fastEMA = calculateEMA(prices, fast);
-      const slowEMA = calculateEMA(prices, slow);
-      const macdLine = prices.map((_, index) =>
-        fastEMA[index] !== null && slowEMA[index] !== null
-          ? fastEMA[index] - slowEMA[index]
-          : null
-      );
-      const firstMACDIndex = macdLine.findIndex((value) => value !== null);
-      const validMACD = macdLine.slice(firstMACDIndex);
-      const validSignal = calculateEMA(validMACD, signal);
-      const signalLine = Array(prices.length).fill(null);
-      const histogram = Array(prices.length).fill(null);
-      validSignal.forEach((value, index) => {
-        if (value !== null) {
-          const targetIndex = firstMACDIndex + index;
-          signalLine[targetIndex] = value;
-          histogram[targetIndex] = macdLine[targetIndex] - value;
-        }
-      });
-
-      return { macdLine, signalLine, histogram };
-    }
-
-    function getMACDStrength(prices) {
-      const result = calculateMACD(prices);
-      if (!result) return NaN;
-      const values = result.histogram.filter(Number.isFinite);
-      if (!values.length) return NaN;
-      const recent = values.slice(-100);
-      const scale = Math.max(...recent.map((value) => Math.abs(value)));
-      if (!Number.isFinite(scale) || scale === 0) return 0;
-      return Math.max(-1, Math.min(1, recent[recent.length - 1] / scale));
-    }
-
     function getPricePercentile(prices) {
       const valid = prices.filter((value) => Number.isFinite(value) && value > 0);
       if (!valid.length) return NaN;
-      const latest = valid[valid.length - 1];
+      const latest = valid.at(-1);
       const below = valid.filter((value) => value < latest).length;
       const equal = valid.filter((value) => value === latest).length;
       return ((below + equal / 2) / valid.length) * 100;
     }
 
-    function lowerBound(sorted, value) {
-      let low = 0;
-      let high = sorted.length;
-      while (low < high) {
-        const middle = (low + high) >> 1;
-        if (sorted[middle] < value) low = middle + 1;
-        else high = middle;
+    function calculateForwardReturnPoints(entry, ticker, horizonMonths, useLogPrice = false) {
+      entry.forwardReturnPointsByHorizon ||= {};
+      const cacheKey = `${horizonMonths}-${useLogPrice ? "log" : "normal"}`;
+      if (entry.forwardReturnPointsByHorizon[cacheKey]) {
+        return entry.forwardReturnPointsByHorizon[cacheKey];
       }
-      return low;
+      const weekly = getWeeklyPoints(entry);
+      const horizonSeconds = horizonMonths * (365.25 / 12) * 24 * 60 * 60;
+      const minimumWeeks = Math.ceil(horizonMonths * 4.35) + 2;
+      if (weekly.length < minimumWeeks) {
+        entry.forwardReturnPointsByHorizon[cacheKey] = [];
+        return entry.forwardReturnPointsByHorizon[cacheKey];
+      }
+
+      const lastTime = weekly[weekly.length - 1].time;
+      const points = [];
+      let futureIndex = 1;
+
+      for (let index = 0; index < weekly.length; index++) {
+        const current = weekly[index];
+        const targetTime = current.time + horizonSeconds;
+        if (targetTime > lastTime) break;
+        futureIndex = Math.max(futureIndex, index + 1);
+        while (futureIndex < weekly.length && weekly[futureIndex].time < targetTime) futureIndex++;
+        if (futureIndex >= weekly.length) break;
+        let selectedIndex = futureIndex;
+        const previousIndex = futureIndex - 1;
+        if (
+          previousIndex > index &&
+          Math.abs(weekly[previousIndex].time - targetTime) <= Math.abs(weekly[futureIndex].time - targetTime)
+        ) {
+          selectedIndex = previousIndex;
+        }
+        const future = weekly[selectedIndex];
+        const analysisPrice = useLogPrice ? Math.log(current.price) : current.price;
+        points.push({
+          ticker,
+          date: current.dateLabel,
+          time: current.time,
+          price: current.price,
+          analysisPrice,
+          futureDate: future.dateLabel,
+          futurePrice: future.price,
+          horizonMonths,
+          returnValue: ((future.price / current.price) - 1) * 100
+        });
+      }
+      entry.forwardReturnPointsByHorizon[cacheKey] = points;
+      return points;
     }
 
-    function upperBound(sorted, value) {
-      let low = 0;
-      let high = sorted.length;
-      while (low < high) {
-        const middle = (low + high) >> 1;
-        if (sorted[middle] <= value) low = middle + 1;
-        else high = middle;
-      }
-      return low;
-    }
-
-    function calculateForwardReturnPoints(entry, ticker) {
-      if (entry.forwardReturnPoints) return entry.forwardReturnPoints;
-      const weekly = (entry.weekly_data || [])
+    function getWeeklyPoints(entry) {
+      if (entry?._weeklyPoints) return entry._weeklyPoints;
+      const points = (entry?.weekly_data || [])
         .map((point) => ({
-          date: point[0],
+          dateLabel: point[0],
+          date: new Date(parseTimestamp(point[0]) * 1000),
           time: parseTimestamp(point[0]),
           price: Number(point[1])
         }))
         .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price) && point.price > 0);
-      if (weekly.length < 105) {
-        entry.forwardReturnPoints = [];
-        return entry.forwardReturnPoints;
+      if (entry) entry._weeklyPoints = points;
+      return points;
+    }
+
+    function calculateSignalPoints(entry, ticker, lookbackMonths, useLogPrice = false) {
+      entry.signalPointsByLookback ||= {};
+      const cacheKey = `${lookbackMonths}-${useLogPrice ? "log" : "normal"}`;
+      if (entry.signalPointsByLookback[cacheKey]) {
+        return entry.signalPointsByLookback[cacheKey];
       }
-
-      const horizonSeconds = 365 * 24 * 60 * 60;
-      const lastTime = weekly[weekly.length - 1].time;
-      const sortedHistory = [];
+      const weekly = getWeeklyPoints(entry);
+      const lookbackSeconds = lookbackMonths * (365.25 / 12) * 24 * 60 * 60;
       const points = [];
-
-      for (let index = 0; index < weekly.length; index++) {
-        const current = weekly[index];
-        const lower = lowerBound(sortedHistory, current.price);
-        const upper = upperBound(sortedHistory, current.price);
-        const equalIncludingCurrent = upper - lower + 1;
-        const percentile = ((lower + equalIncludingCurrent / 2) / (sortedHistory.length + 1)) * 100;
-        sortedHistory.splice(upper, 0, current.price);
-
-        if (index < 51 || current.time + horizonSeconds > lastTime) continue;
-        let futureMaximum = -Infinity;
-        for (let futureIndex = index + 1; futureIndex < weekly.length; futureIndex++) {
-          const future = weekly[futureIndex];
-          if (future.time > current.time + horizonSeconds) break;
-          futureMaximum = Math.max(futureMaximum, future.price);
-        }
-        if (!Number.isFinite(futureMaximum)) continue;
+      let pastIndex = 0;
+      let runningMinimum = Infinity;
+      let runningMaximum = -Infinity;
+      weekly.forEach((current, index) => {
+        const targetTime = current.time - lookbackSeconds;
+        while (pastIndex + 1 < index && weekly[pastIndex + 1].time <= targetTime) pastIndex++;
+        const past = weekly[pastIndex];
+        if (!past || past.time > targetTime) return;
+        const analysisPrice = useLogPrice ? Math.log(current.price) : current.price;
+        const pastAnalysisPrice = useLogPrice ? Math.log(past.price) : past.price;
+        const absoluteMomentum = analysisPrice - pastAnalysisPrice;
+        runningMinimum = Math.min(runningMinimum, absoluteMomentum);
+        runningMaximum = Math.max(runningMaximum, absoluteMomentum);
+        const momentum01 = runningMaximum === runningMinimum
+          ? 0.5
+          : (absoluteMomentum - runningMinimum) / (runningMaximum - runningMinimum);
+        const signal = analysisPrice !== 0 ? momentum01 / analysisPrice : null;
+        if (!Number.isFinite(signal)) return;
         points.push({
           ticker,
           date: current.date,
-          percentile,
-          returnValue: ((futureMaximum / current.price) - 1) * 100
+          dateLabel: current.dateLabel,
+          time: current.time,
+          price: current.price,
+          analysisPrice,
+          momentum: absoluteMomentum,
+          momentum01,
+          signal
         });
-      }
-      entry.forwardReturnPoints = points;
-      return entry.forwardReturnPoints;
+      });
+      entry.signalPointsByLookback[cacheKey] = points;
+      return points;
     }
 
-    function calculateForwardStatistics(points) {
+    function calculateSignalForwardPoints(entry, ticker, lookbackMonths, horizonMonths, useLogPrice = false) {
+      entry.signalForwardPoints ||= {};
+      const cacheKey = `${lookbackMonths}-${horizonMonths}-${useLogPrice ? "log" : "normal"}`;
+      if (entry.signalForwardPoints[cacheKey]) return entry.signalForwardPoints[cacheKey];
+      const signalByTime = new Map(
+        calculateSignalPoints(entry, ticker, lookbackMonths, useLogPrice).map((point) => [point.time, point])
+      );
+      const points = [];
+      calculateForwardReturnPoints(entry, ticker, horizonMonths, useLogPrice).forEach((forwardPoint) => {
+        const signalPoint = signalByTime.get(forwardPoint.time);
+        if (!signalPoint) return;
+        points.push({
+          ticker,
+          dateLabel: forwardPoint.date,
+          signal: signalPoint.signal,
+          price: signalPoint.price,
+          analysisPrice: signalPoint.analysisPrice,
+          momentum: signalPoint.momentum,
+          momentum01: signalPoint.momentum01,
+          futureDate: forwardPoint.futureDate,
+          futurePrice: forwardPoint.futurePrice,
+          horizonMonths,
+          returnValue: forwardPoint.returnValue
+        });
+      });
+      entry.signalForwardPoints[cacheKey] = points;
+      return points;
+    }
+
+    function calculateForwardStatistics(points, xKey = "price") {
       if (points.length < 2) return { correlation: NaN, slope: 0, intercept: 0 };
-      const meanX = points.reduce((sum, point) => sum + point.percentile, 0) / points.length;
+      const meanX = points.reduce((sum, point) => sum + point[xKey], 0) / points.length;
       const meanY = points.reduce((sum, point) => sum + point.returnValue, 0) / points.length;
       let covariance = 0;
       let varianceX = 0;
       let varianceY = 0;
       points.forEach((point) => {
-        const dx = point.percentile - meanX;
+        const dx = point[xKey] - meanX;
         const dy = point.returnValue - meanY;
         covariance += dx * dy;
         varianceX += dx * dx;
@@ -1257,113 +1197,443 @@
       const container = document.getElementById("forward-chart");
       const summary = document.getElementById("forward-summary");
       const tooltip = document.getElementById("forward-tooltip");
-      if (!container || !summary || !tooltip || !dataset) return;
+      const title = document.getElementById("forward-title");
+      if (!container || !summary || !tooltip || !title || !dataset || !window.d3) return;
 
       container.querySelector("svg")?.remove();
       tooltip.style.display = "none";
+      const useLogPrice = getViewMode() === "log-return";
+      title.textContent = useLogPrice ? "ln(Preis) vs. Forward Return" : "Preis vs. Forward Return";
       const tickers = [...selectedTickers];
       if (!tickers.length) {
         summary.textContent = "Keine Reihe ausgewählt.";
         return;
       }
 
-      const points = tickers.flatMap((ticker) => calculateForwardReturnPoints(dataset[ticker], ticker));
+      const visibleForwardHorizons = getVisibleForwardHorizons();
+      const points = visibleForwardHorizons.flatMap((horizon) =>
+        tickers.flatMap((ticker) => calculateForwardReturnPoints(dataset[ticker], ticker, horizon.months, useLogPrice))
+      );
       if (!points.length) {
         summary.textContent = "Zu wenig Historie für eine vollständige Analyse.";
         return;
       }
+      const currentReferences = tickers.map((ticker) => {
+        const point = getWeeklyPoints(dataset[ticker]).at(-1);
+        return point ? { ...point, ticker, analysisPrice: useLogPrice ? Math.log(point.price) : point.price } : null;
+      }).filter(Boolean);
 
-      const stats = calculateForwardStatistics(points);
-      const correlationText = Number.isFinite(stats.correlation)
-        ? stats.correlation.toFixed(2).replace(".", ",")
-        : "–";
-      summary.textContent = `Pearson r = ${correlationText} · n = ${points.length.toLocaleString("de-DE")}`;
+      const statisticsByHorizon = new Map(FORWARD_HORIZONS.map((horizon) => {
+        const horizonPoints = points.filter((point) => point.horizonMonths === horizon.months);
+        return [horizon.months, { ...calculateForwardStatistics(horizonPoints, "analysisPrice"), points: horizonPoints }];
+      }));
+      const correlationText = visibleForwardHorizons.map((horizon) => {
+        const correlation = statisticsByHorizon.get(horizon.months).correlation;
+        return `${horizon.label}: ${Number.isFinite(correlation) ? correlation.toFixed(2).replace(".", ",") : "–"}`;
+      }).join(" · ");
+      summary.textContent = `Pearson r · ${correlationText}`;
       container.setAttribute(
         "aria-label",
-        `Streudiagramm: historisches Preisperzentil gegen maximalen Return der folgenden zwölf Monate. Pearson r ${correlationText}, ${points.length} Wochenpunkte.`
+        `Streudiagramm: ${useLogPrice ? "natürlicher Logarithmus des historischen Preises gegen Forward Returns" : "historischer Preis gegen Forward Returns"} nach 1, 3, 6, 12 und 24 Monaten. Korrelationen ${correlationText}.`
       );
 
       const width = Math.max(280, container.clientWidth);
-      const height = Math.max(190, container.clientHeight);
-      const margin = { top: 10, right: 14, bottom: 38, left: 52 };
+      const height = Math.max(180, container.clientHeight);
+      const margin = { top: 26, right: 20, bottom: 44, left: 64 };
       const innerWidth = width - margin.left - margin.right;
       const innerHeight = height - margin.top - margin.bottom;
-      const returns = points.map((point) => point.returnValue);
-      let yMin = Math.min(0, ...returns);
-      let yMax = Math.max(0, ...returns);
-      const yPadding = Math.max(1, (yMax - yMin) * 0.06);
-      yMin -= yPadding;
-      yMax += yPadding;
-      const xScale = (value) => margin.left + (value / 100) * innerWidth;
-      const yScale = (value) => margin.top + ((yMax - value) / (yMax - yMin || 1)) * innerHeight;
-      const svgNamespace = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(svgNamespace, "svg");
-      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-      svg.setAttribute("aria-hidden", "true");
+      const xExtent = d3.extent([
+        ...points.map((point) => point.analysisPrice),
+        ...currentReferences.map((point) => point.analysisPrice)
+      ]);
+      const yExtent = d3.extent(points, (point) => point.returnValue);
+      const useLogScale = !useLogPrice && xExtent[0] > 0 && xExtent[1] / xExtent[0] >= 20;
+      const xSpan = Math.max(xExtent[1] - xExtent[0], Math.abs(xExtent[0]) * 0.1, 1);
+      const ySpan = Math.max(yExtent[1] - yExtent[0], 1);
+      const xScale = useLogScale
+        ? d3.scaleLog().domain([xExtent[0] * 0.9, xExtent[1] * 1.1]).nice().range([0, innerWidth])
+        : d3.scaleLinear().domain([xExtent[0] - xSpan * 0.08, xExtent[1] + xSpan * 0.08]).nice().range([0, innerWidth]);
+      const yScale = d3.scaleLinear()
+        .domain([Math.min(0, yExtent[0] - ySpan * 0.1), yExtent[1] + ySpan * 0.1])
+        .nice()
+        .range([innerHeight, 0]);
 
-      const addLine = (x1, y1, x2, y2, stroke, dash = "") => {
-        const line = document.createElementNS(svgNamespace, "line");
-        line.setAttribute("x1", x1);
-        line.setAttribute("y1", y1);
-        line.setAttribute("x2", x2);
-        line.setAttribute("y2", y2);
-        line.setAttribute("stroke", stroke);
-        if (dash) line.setAttribute("stroke-dasharray", dash);
-        svg.appendChild(line);
-      };
-      const addText = (x, y, text, anchor = "middle") => {
-        const label = document.createElementNS(svgNamespace, "text");
-        label.setAttribute("x", x);
-        label.setAttribute("y", y);
-        label.setAttribute("text-anchor", anchor);
-        label.setAttribute("fill", "#64748b");
-        label.setAttribute("font-size", "9");
-        label.textContent = text;
-        svg.appendChild(label);
-        return label;
-      };
-
-      [0, 25, 50, 75, 100].forEach((tick) => {
-        const x = xScale(tick);
-        addLine(x, margin.top, x, margin.top + innerHeight, "#e2e8f0");
-        addText(x, height - 22, String(tick));
-      });
-      for (let index = 0; index <= 4; index++) {
-        const value = yMin + ((yMax - yMin) * index) / 4;
-        const y = yScale(value);
-        addLine(margin.left, y, width - margin.right, y, "#e2e8f0");
-        addText(margin.left - 6, y + 3, `${Math.round(value)} %`, "end");
+      const svg = d3.select(container).insert("svg", ".forward-tooltip")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("aria-hidden", "true");
+      const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      root.append("g")
+        .call(d3.axisLeft(yScale).ticks(5).tickSize(-innerWidth).tickFormat(""))
+        .call((group) => group.select(".domain").remove())
+        .call((group) => group.selectAll("line").attr("stroke", "#e2e8f0"));
+      root.append("g").attr("transform", `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(xScale).ticks(Math.max(3, Math.floor(innerWidth / 90))).tickFormat(d3.format("~g")))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 9));
+      root.append("g")
+        .call(d3.axisLeft(yScale).ticks(5).tickFormat((value) => `${d3.format("~g")(value)} %`))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 9));
+      root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 38)
+        .attr("text-anchor", "middle").attr("fill", "#64748b").attr("font-size", 9)
+        .text(useLogPrice ? "ln(historischer Preis)" : `Historischer Preis${useLogScale ? " (log. Skala)" : ""}`);
+      root.append("text").attr("transform", "rotate(-90)")
+        .attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
+        .attr("fill", "#64748b").attr("font-size", 9)
+        .text("Forward Return");
+      if (yScale.domain()[0] < 0 && yScale.domain()[1] > 0) {
+        root.append("line").attr("x1", 0).attr("x2", innerWidth)
+          .attr("y1", yScale(0)).attr("y2", yScale(0)).attr("stroke", "#94a3b8");
       }
-      if (yMin < 0 && yMax > 0) {
-        addLine(margin.left, yScale(0), width - margin.right, yScale(0), "#94a3b8");
-      }
-      addText(margin.left + innerWidth / 2, height - 6, "Historisches Preisperzentil");
-      const yLabel = addText(12, margin.top + innerHeight / 2, "Max. 12M-Return");
-      yLabel.setAttribute("transform", `rotate(-90 12 ${margin.top + innerHeight / 2})`);
 
       const maxRenderedPoints = 1800;
       const step = Math.max(1, Math.ceil(points.length / maxRenderedPoints));
+      let pinned = false;
+      const showForwardTooltip = (event, point, pin = false) => {
+        const horizon = getForwardHorizon(point.horizonMonths);
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.date}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}-Return bis ${point.futureDate}: ${point.returnValue.toFixed(1).replace(".", ",")} %`;
+        const rect = container.getBoundingClientRect();
+        tooltip.style.display = "block";
+        tooltip.style.left = `${Math.min(width - 220, Math.max(6, event.clientX - rect.left + 10))}px`;
+        tooltip.style.top = `${Math.min(height - 70, Math.max(6, event.clientY - rect.top - 54))}px`;
+        if (pin) {
+          pinned = true;
+          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.date} · ${horizon.label}-Return ${point.returnValue.toFixed(1).replace(".", ",")} %`;
+        }
+      };
+      const showCurrentPriceTooltip = (event, point, pin = false) => {
+        tooltip.innerHTML = `<b>Aktuell ${point.ticker}</b> · ${point.dateLabel}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>Forward Returns: noch unbekannt`;
+        const rect = container.getBoundingClientRect();
+        const fallbackX = rect.left + margin.left + xScale(point.analysisPrice);
+        const fallbackY = rect.top + margin.top + 20;
+        const clientX = Number.isFinite(event.clientX) && event.clientX > 0 ? event.clientX : fallbackX;
+        const clientY = Number.isFinite(event.clientY) && event.clientY > 0 ? event.clientY : fallbackY;
+        tooltip.style.display = "block";
+        tooltip.style.left = `${Math.min(width - 220, Math.max(6, clientX - rect.left + 10))}px`;
+        tooltip.style.top = `${Math.min(height - 70, Math.max(6, clientY - rect.top - 30))}px`;
+        if (pin) {
+          pinned = true;
+          summary.textContent = `Aktuell ${point.ticker} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · Forward Returns noch unbekannt`;
+        }
+      };
       points.filter((_, index) => index % step === 0).forEach((point) => {
-        const circle = document.createElementNS(svgNamespace, "circle");
-        circle.setAttribute("cx", xScale(point.percentile));
-        circle.setAttribute("cy", yScale(point.returnValue));
-        circle.setAttribute("r", "2.3");
-        circle.setAttribute("fill", getColor(point.ticker));
-        circle.setAttribute("fill-opacity", "0.38");
-        circle.addEventListener("pointerenter", (event) => {
-          tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.date}<br>Perzentil: ${point.percentile.toFixed(1).replace(".", ",")} %<br>Max. 12M-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %`;
-          tooltip.style.display = "block";
-          tooltip.style.left = `${Math.min(width - 215, Math.max(6, event.offsetX + 10))}px`;
-          tooltip.style.top = `${Math.max(6, event.offsetY - 54)}px`;
-        });
-        circle.addEventListener("pointerleave", () => { tooltip.style.display = "none"; });
-        svg.appendChild(circle);
+        const horizon = getForwardHorizon(point.horizonMonths);
+        root.append("circle")
+          .attr("cx", xScale(point.analysisPrice)).attr("cy", yScale(point.returnValue)).attr("r", 2.3)
+          .attr("fill", horizon.color).attr("fill-opacity", 0.45);
+        root.append("circle")
+          .attr("cx", xScale(point.analysisPrice)).attr("cy", yScale(point.returnValue)).attr("r", 9)
+          .attr("fill", "transparent").style("cursor", "pointer")
+          .on("pointerenter", (event) => showForwardTooltip(event, point))
+          .on("click", (event) => showForwardTooltip(event, point, true))
+          .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
       });
 
-      const trendStart = stats.intercept;
-      const trendEnd = stats.intercept + stats.slope * 100;
-      addLine(xScale(0), yScale(trendStart), xScale(100), yScale(trendEnd), "#0f172a", "5 4");
-      container.insertBefore(svg, tooltip);
+      visibleForwardHorizons.forEach((horizon) => {
+        const stats = statisticsByHorizon.get(horizon.months);
+        const horizonExtent = d3.extent(stats.points, (point) => point.analysisPrice);
+        if (stats.points.length > 1 && Number.isFinite(stats.slope) && horizonExtent[0] !== horizonExtent[1]) {
+          root.append("line")
+            .attr("x1", xScale(horizonExtent[0])).attr("y1", yScale(stats.intercept + stats.slope * horizonExtent[0]))
+            .attr("x2", xScale(horizonExtent[1])).attr("y2", yScale(stats.intercept + stats.slope * horizonExtent[1]))
+            .attr("stroke", horizon.color).attr("stroke-width", 1.25).attr("stroke-dasharray", "5 4");
+        }
+      });
+      renderForwardHorizonLegend(root, innerWidth);
+      currentReferences.forEach((point, index) => {
+        const currentX = xScale(point.analysisPrice);
+        root.append("line")
+          .attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
+          .attr("stroke", "#0f172a").attr("stroke-width", 1.5).attr("stroke-dasharray", "3 3");
+        root.append("text")
+          .attr("x", Math.min(innerWidth - 2, currentX + 3)).attr("y", 10 + (index % 2) * 12)
+          .attr("fill", "#0f172a").attr("font-size", 10).attr("font-weight", 700)
+          .text(`Aktuell ${point.ticker}`);
+        root.append("line")
+          .attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
+          .attr("stroke", "transparent").attr("stroke-width", 18)
+          .attr("role", "button").attr("tabindex", 0)
+          .attr("aria-label", `Aktueller Preis ${point.ticker}: ${formatActualPrice(point.price)}`)
+          .style("cursor", "pointer")
+          .on("pointerenter", (event) => showCurrentPriceTooltip(event, point))
+          .on("click", (event) => showCurrentPriceTooltip(event, point, true))
+          .on("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            showCurrentPriceTooltip(event, point, true);
+          })
+          .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
+      });
+    }
+
+    function readMonthInput(id) {
+      const input = document.getElementById(id);
+      const value = Math.max(0.2, Math.min(24, Math.round((Number(input?.value) || 12) * 5) / 5));
+      if (input) input.value = value.toFixed(1);
+      return value;
+    }
+
+    function showAnalysisEmpty(container, text) {
+      container.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "chart-empty";
+      empty.textContent = text;
+      container.appendChild(empty);
+    }
+
+    function renderSignalChart(selectedTickers, timeRange) {
+      const container = document.getElementById("signal-chart");
+      const summary = document.getElementById("signal-summary");
+      if (!container || !summary || !dataset || !window.d3) return;
+      const lookbackMonths = readMonthInput("signal-lookback");
+      const useLogPrice = getViewMode() === "log-return";
+      const entries = [...selectedTickers].map((ticker) => ({
+        ticker,
+        color: getColor(ticker),
+        points: calculateSignalPoints(dataset[ticker], ticker, lookbackMonths, useLogPrice)
+          .filter((point) => point.time >= timeRange[0] && point.time <= timeRange[1])
+      })).filter((entry) => entry.points.length);
+      document.getElementById("signal-title").textContent = useLogPrice
+        ? `${lookbackMonths}M-Log-Momentum (0–1) ÷ ln(Preis)`
+        : `${lookbackMonths}M-Momentum (0–1) ÷ aktueller Preis`;
+      container.setAttribute("aria-label", useLogPrice
+        ? `Zeitreihe des ${lookbackMonths}-Monats-Log-Momentum-Indikators und des natürlichen Logarithmus des Preises`
+        : `Zeitreihe des ${lookbackMonths}-Monats-Momentum-Indikators und des aktuellen Preises`);
+      if (!entries.length) {
+        summary.textContent = selectedTickers.size ? "Für diesen Zeitraum sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
+        showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
+        return;
+      }
+
+      const latestText = entries.map((entry) => {
+        const point = entry.points.at(-1);
+        return `${entry.ticker}: Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)}`;
+      }).join(" · ");
+      summary.textContent = `Aktuell · ${latestText} · Durchgezogen: Indikator · gestrichelt: ${useLogPrice ? "ln(Preis)" : "Preis"}`;
+      container.replaceChildren();
+      const width = Math.max(280, container.clientWidth);
+      const height = Math.max(180, container.clientHeight);
+      const margin = { top: 18, right: 64, bottom: 38, left: 62 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const allPoints = entries.flatMap((entry) => entry.points);
+      const x = d3.scaleTime().domain(d3.extent(allPoints, (point) => point.date)).range([0, innerWidth]);
+      const signalExtent = d3.extent(allPoints, (point) => point.signal);
+      const signalSpan = Math.max((signalExtent[1] || 0) - (signalExtent[0] || 0), Math.abs(signalExtent[1] || 1) * 0.05, 1e-9);
+      const y = d3.scaleLinear().domain([
+        Math.min(0, (signalExtent[0] || 0) - signalSpan * 0.08),
+        Math.max(0, (signalExtent[1] || 0) + signalSpan * 0.08)
+      ]).nice().range([innerHeight, 0]);
+      const priceExtent = d3.extent(allPoints, (point) => point.analysisPrice);
+      const priceSpan = Math.max((priceExtent[1] || 0) - (priceExtent[0] || 0), Math.abs(priceExtent[0] || 1) * 0.05, 1e-9);
+      const priceY = d3.scaleLinear()
+        .domain([(priceExtent[0] || 0) - priceSpan * 0.08, (priceExtent[1] || 1) + priceSpan * 0.08])
+        .nice()
+        .range([innerHeight, 0]);
+      const svg = d3.select(container).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("aria-hidden", "true");
+      const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      root.append("g").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""))
+        .call((group) => group.select(".domain").remove())
+        .call((group) => group.selectAll("line").attr("stroke", "#e2e8f0"));
+      root.append("g").attr("transform", `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(x).ticks(Math.max(3, Math.floor(innerWidth / 100))))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 9));
+      root.append("g").call(d3.axisLeft(y).ticks(5).tickFormat((value) => value.toLocaleString("de-DE", { maximumSignificantDigits: 3 })))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 9));
+      root.append("g").attr("transform", `translate(${innerWidth},0)`)
+        .call(d3.axisRight(priceY).ticks(5).tickSizeOuter(0).tickPadding(6).tickFormat((value) => value.toLocaleString("de-DE", { maximumSignificantDigits: 4 })))
+        .call((group) => group.select(".domain").attr("stroke", "#94a3b8"))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
+      root.append("text").attr("x", 0).attr("y", -6).attr("fill", "#334155").attr("font-size", 10).text("Indikator");
+      root.append("text").attr("x", innerWidth).attr("y", -6).attr("text-anchor", "end").attr("fill", "#334155").attr("font-size", 10).text(useLogPrice ? "ln(Preis)" : "Preis");
+      const line = d3.line().x((point) => x(point.date)).y((point) => y(point.signal));
+      const priceLine = d3.line().x((point) => x(point.date)).y((point) => priceY(point.analysisPrice));
+      entries.forEach((entry) => {
+        root.append("path").datum(entry.points).attr("d", priceLine).attr("fill", "none")
+          .attr("stroke", entry.color).attr("stroke-opacity", 0.48).attr("stroke-width", 1.4).attr("stroke-dasharray", "5 4");
+        root.append("path").datum(entry.points).attr("d", line).attr("fill", "none")
+          .attr("stroke", entry.color).attr("stroke-width", 2);
+        const current = entry.points.at(-1);
+        root.append("circle").attr("cx", x(current.date)).attr("cy", y(current.signal)).attr("r", 4)
+          .attr("fill", entry.color).attr("stroke", "#ffffff").attr("stroke-width", 1.5);
+        root.append("circle").attr("cx", x(current.date)).attr("cy", priceY(current.analysisPrice)).attr("r", 3.5)
+          .attr("fill", "#ffffff").attr("stroke", entry.color).attr("stroke-width", 1.5);
+      });
+
+      const tooltip = document.createElement("div");
+      tooltip.className = "chart-tooltip";
+      container.appendChild(tooltip);
+      const focus = root.append("line").attr("y1", 0).attr("y2", innerHeight)
+        .attr("stroke", "#475569").attr("stroke-width", 1).attr("stroke-dasharray", "3 3").style("display", "none");
+      const bisect = d3.bisector((point) => point.date).center;
+      let pinned = false;
+      const inspect = (event, pin = false) => {
+        const [pointerX] = d3.pointer(event, event.currentTarget);
+        const targetDate = x.invert(Math.max(0, Math.min(innerWidth, pointerX)));
+        const selected = entries.map((entry) => {
+          const index = bisect(entry.points, targetDate);
+          return { entry, point: entry.points[Math.max(0, Math.min(index, entry.points.length - 1))] };
+        }).filter(({ point }) => point);
+        if (!selected.length) return;
+        const selectedDate = selected[0].point.date;
+        focus.attr("x1", x(selectedDate)).attr("x2", x(selectedDate)).style("display", null);
+        tooltip.innerHTML = `<strong>${d3.timeFormat("%d.%m.%Y")(selectedDate)}</strong><br>${selected.map(({ entry, point }) => `<span style="color:${entry.color}">●</span> ${entry.ticker}: Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)}`).join("<br>")}`;
+        tooltip.style.display = "block";
+        tooltip.style.left = `${Math.min(width - 270, Math.max(8, margin.left + x(selectedDate) + 12))}px`;
+        tooltip.style.top = `${Math.max(8, margin.top + 6)}px`;
+        if (pin) {
+          pinned = true;
+          summary.textContent = `Ausgewählt: ${d3.timeFormat("%d.%m.%Y")(selectedDate)} · ${selected.map(({ entry, point }) => `${entry.ticker}: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}, ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")}, ` : ""}Preis ${formatActualPrice(point.price)}`).join(" · ")}`;
+        }
+      };
+      root.append("rect").attr("width", innerWidth).attr("height", innerHeight).attr("fill", "transparent")
+        .style("cursor", "crosshair").style("touch-action", "pan-y")
+        .on("pointermove", (event) => inspect(event))
+        .on("click", (event) => inspect(event, true))
+        .on("pointerleave", () => {
+          if (pinned) return;
+          focus.style("display", "none");
+          tooltip.style.display = "none";
+        });
+    }
+
+    function renderSignalForwardChart(selectedTickers) {
+      const container = document.getElementById("signal-forward-chart");
+      const summary = document.getElementById("signal-forward-summary");
+      const title = document.getElementById("signal-forward-title");
+      if (!container || !summary || !title || !dataset || !window.d3) return;
+      const lookbackMonths = readMonthInput("signal-lookback");
+      const useLogPrice = getViewMode() === "log-return";
+      title.textContent = useLogPrice
+        ? `${lookbackMonths}M-Log-Indikator vs. Forward Return`
+        : `${lookbackMonths}M-Indikator vs. Forward Return`;
+      container.setAttribute("aria-label", useLogPrice
+        ? `Streudiagramm aus Log-Momentum-Indikator und Forward Returns für 1, 3, 6, 12 und 24 Monate`
+        : `Streudiagramm aus Momentum-Indikator und Forward Returns für 1, 3, 6, 12 und 24 Monate`);
+      const visibleForwardHorizons = getVisibleForwardHorizons();
+      const points = visibleForwardHorizons.flatMap((horizon) =>
+        [...selectedTickers].flatMap((ticker) =>
+          calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice)
+        )
+      );
+      if (!points.length) {
+        summary.textContent = selectedTickers.size ? "Für diese Kombination sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
+        showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
+        return;
+      }
+
+      const statisticsByHorizon = new Map(FORWARD_HORIZONS.map((horizon) => {
+        const horizonPoints = points.filter((point) => point.horizonMonths === horizon.months);
+        return [horizon.months, { ...calculateForwardStatistics(horizonPoints, "signal"), points: horizonPoints }];
+      }));
+      const correlationText = visibleForwardHorizons.map((horizon) => {
+        const correlation = statisticsByHorizon.get(horizon.months).correlation;
+        return `${horizon.label}: ${Number.isFinite(correlation) ? correlation.toFixed(2).replace(".", ",") : "–"}`;
+      }).join(" · ");
+      summary.textContent = `r(Indikator, Return) · ${correlationText}`;
+      const maxRenderedPoints = 2500;
+      const step = Math.max(1, Math.ceil(points.length / maxRenderedPoints));
+      const sampled = points.filter((_, index) => index % step === 0);
+      const currentReferences = [...selectedTickers].map((ticker) => {
+        const point = calculateSignalPoints(dataset[ticker], ticker, lookbackMonths, useLogPrice).at(-1);
+        return point || null;
+      }).filter(Boolean);
+      const latestEvaluable = new Map();
+      points.forEach((point) => latestEvaluable.set(`${point.ticker}|${point.horizonMonths}`, point));
+      const latestKeys = new Set([...latestEvaluable.values()].map((point) => `${point.ticker}|${point.horizonMonths}|${point.dateLabel}`));
+
+      container.replaceChildren();
+      const width = Math.max(280, container.clientWidth);
+      const height = Math.max(180, container.clientHeight);
+      const margin = { top: 24, right: 20, bottom: 54, left: 64 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const xValues = [...points.map((point) => point.signal), ...currentReferences.map((point) => point.signal)];
+      const xExtent = d3.extent(xValues);
+      const yExtent = d3.extent(points, (point) => point.returnValue);
+      const xSpan = Math.max((xExtent[1] || 0) - (xExtent[0] || 0), Math.abs(xExtent[1] || 1) * 0.05, 1e-9);
+      const ySpan = Math.max((yExtent[1] || 0) - (yExtent[0] || 0), Math.abs(yExtent[1] || 1) * 0.05, 1e-9);
+      const x = d3.scaleLinear()
+        .domain([
+          useLogPrice ? (xExtent[0] || 0) - xSpan * 0.08 : Math.max(0, (xExtent[0] || 0) - xSpan * 0.08),
+          (xExtent[1] || 0) + xSpan * 0.08
+        ])
+        .nice().range([0, innerWidth]);
+      const y = d3.scaleLinear()
+        .domain([Math.min(0, (yExtent[0] || 0) - ySpan * 0.08), (yExtent[1] || 0) + ySpan * 0.08])
+        .nice().range([innerHeight, 0]);
+      const svg = d3.select(container).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("aria-hidden", "true");
+      const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      root.append("g").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""))
+        .call((group) => group.select(".domain").remove())
+        .call((group) => group.selectAll("line").attr("stroke", "#d7dee8").attr("stroke-width", 0.75).attr("shape-rendering", "crispEdges"));
+      root.append("g").attr("transform", `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(x).ticks(width < 480 ? 3 : 5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => value.toLocaleString("de-DE", { maximumSignificantDigits: 3 })))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
+      root.append("g").call(d3.axisLeft(y).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
+      root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 44).attr("text-anchor", "middle")
+        .attr("fill", "#334155").attr("font-size", 10).text(useLogPrice
+          ? `${lookbackMonths}M-Log-Momentum (0–1) ÷ ln(Preis)`
+          : `${lookbackMonths}M-Momentum (0–1) ÷ aktueller Preis`);
+      root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
+        .attr("fill", "#334155").attr("font-size", 10).text("Forward Return");
+
+      const marks = root.append("g");
+      marks.selectAll("circle.signal-point").data(sampled).join("circle")
+        .attr("class", "signal-point").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 3)
+        .attr("fill", (point) => getForwardHorizon(point.horizonMonths).color).attr("fill-opacity", 0.5);
+      [...latestEvaluable.values()].forEach((point) => {
+        root.append("circle").attr("cx", x(point.signal)).attr("cy", y(point.returnValue)).attr("r", 6)
+          .attr("fill", "none").attr("stroke", getForwardHorizon(point.horizonMonths).color).attr("stroke-width", 2);
+      });
+      visibleForwardHorizons.forEach((horizon) => {
+        const stats = statisticsByHorizon.get(horizon.months);
+        const regressionExtent = d3.extent(stats.points, (point) => point.signal);
+        if (stats.points.length > 1 && Number.isFinite(stats.slope) && regressionExtent[0] !== regressionExtent[1]) {
+          root.append("line")
+            .attr("x1", x(regressionExtent[0])).attr("y1", y(stats.intercept + stats.slope * regressionExtent[0]))
+            .attr("x2", x(regressionExtent[1])).attr("y2", y(stats.intercept + stats.slope * regressionExtent[1]))
+            .attr("stroke", horizon.color).attr("stroke-width", 1.25).attr("stroke-dasharray", "5 4");
+        }
+      });
+      renderForwardHorizonLegend(root, innerWidth);
+
+      const tooltip = document.createElement("div");
+      tooltip.className = "chart-tooltip";
+      container.appendChild(tooltip);
+      let pinned = false;
+      const showTooltip = (html, chartX, chartY, pin = false) => {
+        tooltip.innerHTML = html;
+        tooltip.style.display = "block";
+        tooltip.style.left = `${Math.min(width - 270, Math.max(8, margin.left + chartX + 10))}px`;
+        tooltip.style.top = `${Math.min(height - 100, Math.max(8, margin.top + chartY - 38))}px`;
+        if (pin) pinned = true;
+      };
+      marks.selectAll("circle.signal-hit").data(sampled).join("circle")
+        .attr("class", "signal-hit").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 10)
+        .attr("fill", "transparent").style("cursor", "pointer")
+        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}-Return bis ${point.futureDate}: ${point.returnValue.toFixed(1).replace(".", ",")} %${latestKeys.has(`${point.ticker}|${point.horizonMonths}|${point.dateLabel}`) ? "<br><b>Zuletzt auswertbarer Punkt</b>" : ""}`, x(point.signal), y(point.returnValue)))
+        .on("click", (_, point) => {
+          const horizon = getForwardHorizon(point.horizonMonths);
+          showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}-Return bis ${point.futureDate}: ${point.returnValue.toFixed(1).replace(".", ",")} %`, x(point.signal), y(point.returnValue), true);
+          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.dateLabel} · ${horizon.label}-Return ${point.returnValue.toFixed(1).replace(".", ",")} % · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}`;
+        })
+        .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
+
+      currentReferences.forEach((point, index) => {
+        const currentX = x(point.signal);
+        root.append("line").attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
+          .attr("stroke", "#0f172a").attr("stroke-width", 1.5).attr("stroke-dasharray", "3 3");
+        root.append("text").attr("x", Math.min(innerWidth - 2, currentX + 3)).attr("y", 10 + (index % 2) * 12)
+          .attr("fill", "#0f172a").attr("font-size", 10).attr("font-weight", 700).text(`Aktuell ${point.ticker}`);
+        root.append("line").attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
+          .attr("stroke", "transparent").attr("stroke-width", 18).style("cursor", "pointer")
+          .on("pointerenter", () => showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>1M/3M/6M/12M/24M-Returns: noch unbekannt`, currentX, 12 + index * 10))
+          .on("click", () => {
+            showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>1M/3M/6M/12M/24M-Returns: noch unbekannt`, currentX, 12 + index * 10, true);
+            summary.textContent = `Aktuell ${point.ticker} · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · Forward Returns noch unbekannt`;
+          })
+          .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
+      });
     }
 
     function updateAlarmButtons() {
@@ -1372,8 +1642,6 @@
       const alarm = oneSelected ? getPriceAlarm(selected[0].ticker) : null;
       const setButton = document.getElementById("set-price-alarm");
       const clearButton = document.getElementById("clear-price-alarm");
-      const macdButton = document.getElementById("toggle-macd");
-      const macdSettingsButton = document.getElementById("macd-settings-button");
 
       setButton.disabled = !oneSelected;
       setButton.classList.toggle("active-tool", alarmPickMode && oneSelected);
@@ -1382,9 +1650,6 @@
         : "Preisalarm setzen";
       clearButton.disabled = !alarm;
 
-      macdButton.disabled = !oneSelected;
-      macdSettingsButton.disabled = false;
-      macdButton.textContent = showMACD ? "MACD ausblenden" : "MACD anzeigen";
     }
 
     function getGitHubAlarmUrl(series, alarm) {
@@ -1480,20 +1745,6 @@
       return labels[displayRangeKey] || displayRangeKey;
     }
 
-    function getBasisDateLabel() {
-      const labels = {
-        "display-start": "Anzeige-Start",
-        "1y": "1 Jahr zurück",
-        "3y": "3 Jahre zurück",
-        "5y": "5 Jahre zurück",
-        "10y": "10 Jahre zurück",
-        "20y": "20 Jahre zurück",
-        "first-common": "Erste gemeinsame",
-        "custom": `${customBasisDate}`
-      };
-      return labels[indexBasisKey] || "?";
-    }
-
     function parseTimestamp(input) {
       if (typeof input === "number") return input;
       if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
@@ -1540,34 +1791,6 @@
       renderChart();
     }
 
-    async function handleBasisButtonClick() {
-      const dialog = document.getElementById("basis-dialog");
-      const customDateInput = document.getElementById("custom-basis-date");
-      customDateInput.value = customBasisDate || "";
-      dialog.showModal();
-    }
-
-    function handleBasisApply() {
-      const choice = document.querySelector('input[name="basis-choice"]:checked')?.value;
-      if (choice === "custom") {
-        customBasisDate = document.getElementById("custom-basis-date").value;
-      } else if (choice) {
-        indexBasisKey = choice;
-        customBasisDate = "";
-      }
-      indexBasisKey = choice || indexBasisKey;
-      document.getElementById("basis-button").textContent = `Indexbasis: ${getBasisDateLabel()}`;
-      renderChart();
-      document.getElementById("basis-dialog").close();
-    }
-
-    function handleComparisonPointClick() {
-      comparisonPickMode = !comparisonPickMode;
-      const btn = document.getElementById("comparison-point");
-      btn.classList.toggle("active-tool", comparisonPickMode);
-      btn.textContent = comparisonPickMode ? "Jetzt Punkt im Chart anklicken" : "Vergleichspunkt wählen";
-    }
-
     function handlePriceAlarmClick() {
       const selected = getSelectedSeries();
       if (selected.length !== 1) return;
@@ -1586,35 +1809,6 @@
       renderChart();
     }
 
-    function handleToggleMACD() {
-      const selected = getSelectedSeries();
-      if (selected.length !== 1) return;
-      showMACD = !showMACD;
-      document.getElementById("toggle-macd").classList.toggle("active-tool", showMACD);
-      renderChart();
-    }
-
-    function handleMACSSettingsClick() {
-      const dialog = document.getElementById("macd-dialog");
-      document.getElementById("macd-fast").value = macdParams.fast;
-      document.getElementById("macd-slow").value = macdParams.slow;
-      document.getElementById("macd-signal").value = macdParams.signal;
-      dialog.showModal();
-    }
-
-    function handleMACSSettingsClose() {
-      const fast = parseInt(document.getElementById("macd-fast").value, 10);
-      const slow = parseInt(document.getElementById("macd-slow").value, 10);
-      const signal = parseInt(document.getElementById("macd-signal").value, 10);
-
-      if (fast > 0 && slow > 0 && signal > 0 && fast < slow) {
-        saveMACD({ fast, slow, signal });
-        renderChart();
-      }
-
-      document.getElementById("macd-dialog").close();
-    }
-
     function handleEventToggle() {
       showEvents = !showEvents;
       const btn = document.getElementById("toggle-events");
@@ -1630,16 +1824,6 @@
       }
       computeCorrelations(selected);
       document.getElementById("correlation-dialog").showModal();
-    }
-
-    function handleFullscreenToggle() {
-      document.querySelector(".app").classList.toggle("fullscreen-mode");
-      setTimeout(() => {
-        chart.applyOptions({ height: document.getElementById("chart").clientHeight });
-        if (macdChart) {
-          macdChart.applyOptions({ height: document.getElementById("macd-chart").clientHeight });
-        }
-      }, 100);
     }
 
     function computeCorrelations(tickers) {
@@ -1742,54 +1926,139 @@
       document.getElementById("correlation-content").innerHTML = html;
     }
 
+    function renderD3Chart(entries) {
+      const container = document.getElementById("chart");
+      container.replaceChildren();
+
+      if (!entries.length) {
+        const empty = document.createElement("div");
+        empty.className = "chart-empty";
+        empty.textContent = "Noch nichts ausgewählt. Wähle links einen oder mehrere Rohstoffe aus.";
+        container.appendChild(empty);
+        return;
+      }
+
+      if (!window.d3) {
+        const empty = document.createElement("div");
+        empty.className = "chart-empty";
+        empty.textContent = "Die Chart-Bibliothek konnte nicht geladen werden. Bitte Internetverbindung prüfen und die Seite neu laden.";
+        container.appendChild(empty);
+        return;
+      }
+
+      const width = Math.max(container.clientWidth, 320);
+      const height = Math.max(container.clientHeight, 280);
+      const margin = { top: showEvents ? 50 : 24, right: 24, bottom: 42, left: 64 };
+      const innerWidth = Math.max(1, width - margin.left - margin.right);
+      const innerHeight = Math.max(1, height - margin.top - margin.bottom);
+      const allPoints = entries.flatMap((entry) => entry.chartData);
+      const xExtent = d3.extent(allPoints, (point) => point.date);
+      const yExtent = d3.extent(allPoints, (point) => point.value);
+      const ySpan = Math.max((yExtent[1] || 0) - (yExtent[0] || 0), 1);
+      const x = d3.scaleTime().domain(xExtent).range([0, innerWidth]);
+      const y = d3.scaleLinear()
+        .domain([yExtent[0] - ySpan * 0.06, yExtent[1] + ySpan * 0.06])
+        .nice()
+        .range([innerHeight, 0]);
+
+      const svg = d3.select(container)
+        .append("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("aria-hidden", "true");
+      const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      const clipId = `chart-clip-${Math.random().toString(36).slice(2)}`;
+      root.append("defs").append("clipPath").attr("id", clipId)
+        .append("rect").attr("width", innerWidth).attr("height", innerHeight);
+
+      root.append("g")
+        .call(d3.axisLeft(y).ticks(Math.max(4, Math.floor(innerHeight / 70))).tickSize(-innerWidth).tickFormat(""))
+        .call((group) => group.select(".domain").remove())
+        .call((group) => group.selectAll("line").attr("stroke", "#e2e8f0"));
+      root.append("g")
+        .attr("transform", `translate(0,${innerHeight})`)
+        .call(d3.axisBottom(x).ticks(Math.max(3, Math.floor(innerWidth / 110))).tickSizeOuter(0))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b"));
+      root.append("g")
+        .call(d3.axisLeft(y).ticks(Math.max(4, Math.floor(innerHeight / 70))).tickSizeOuter(0))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b"));
+
+      const plot = root.append("g").attr("clip-path", `url(#${clipId})`);
+      const line = d3.line()
+        .defined((point) => Number.isFinite(point.value))
+        .x((point) => x(point.date))
+        .y((point) => y(point.value));
+
+      entries.forEach((entry) => {
+        plot.append("path")
+          .datum(entry.chartData)
+          .attr("fill", "none")
+          .attr("stroke", entry.color)
+          .attr("stroke-width", 2)
+          .attr("stroke-linejoin", "round")
+          .attr("stroke-linecap", "round")
+          .attr("d", line);
+      });
+
+      if (showEvents) {
+        const visibleEvents = entries.flatMap((entry) =>
+          (TICKER_EVENTS[entry.ticker] || []).map((event) => ({ ...event, ticker: entry.ticker }))
+        ).filter((event) => {
+          const date = new Date(`${event.date}T00:00:00Z`);
+          return date >= xExtent[0] && date <= xExtent[1];
+        });
+        const events = root.append("g");
+        visibleEvents.forEach((event, index) => {
+          const eventX = x(new Date(`${event.date}T00:00:00Z`));
+          events.append("line")
+            .attr("x1", eventX).attr("x2", eventX).attr("y1", 0).attr("y2", innerHeight)
+            .attr("stroke", event.color).attr("stroke-opacity", 0.55).attr("stroke-dasharray", "4 4");
+          events.append("text")
+            .attr("x", eventX + 3).attr("y", -8 - (index % 2) * 14)
+            .attr("fill", event.color).attr("font-size", 9)
+            .text(`${event.ticker}: ${event.label}`);
+        });
+      }
+
+      const tooltip = document.createElement("div");
+      tooltip.className = "chart-tooltip";
+      container.appendChild(tooltip);
+      const focus = root.append("line")
+        .attr("y1", 0).attr("y2", innerHeight)
+        .attr("stroke", "#64748b").attr("stroke-dasharray", "3 3")
+        .style("display", "none");
+      const bisect = d3.bisector((point) => point.date).center;
+
+      root.append("rect")
+        .attr("width", innerWidth).attr("height", innerHeight)
+        .attr("fill", "transparent")
+        .style("cursor", "crosshair")
+        .on("pointermove", function(event) {
+          const [pointerX] = d3.pointer(event, this);
+          const targetDate = x.invert(pointerX);
+          const values = entries.map((entry) => {
+            const index = bisect(entry.chartData, targetDate);
+            return { entry, point: entry.chartData[Math.max(0, Math.min(index, entry.chartData.length - 1))] };
+          }).filter(({ point }) => point);
+          if (!values.length) return;
+          const displayDate = values[0].point.date;
+          focus.attr("x1", x(displayDate)).attr("x2", x(displayDate)).style("display", null);
+          tooltip.innerHTML = `<strong>${d3.timeFormat("%d.%m.%Y")(displayDate)}</strong><br>${values.map(({ entry, point }) => `<span style="color:${entry.color}">●</span> ${entry.ticker}: ${formatActualPrice(point.value)}`).join("<br>")}`;
+          tooltip.style.display = "block";
+          tooltip.style.left = `${Math.min(width - 270, Math.max(8, margin.left + pointerX + 12))}px`;
+          tooltip.style.top = `${Math.max(8, margin.top + 8)}px`;
+        })
+        .on("pointerleave", () => {
+          focus.style("display", "none");
+          tooltip.style.display = "none";
+        });
+    }
+
     async function initChart() {
       const chartContainer = document.getElementById("chart");
-      chart = LightweightCharts.createChart(chartContainer, {
-        layout: {
-          background: { color: "#ffffff" },
-          textColor: "#172033",
-          attributionUrl: ""
-        },
-        width: chartContainer.clientWidth,
-        height: chartContainer.clientHeight,
-        timeScale: { timeVisible: true, secondsVisible: false }
-      });
-
-      const macdContainer = document.getElementById("macd-chart");
-      macdChart = LightweightCharts.createChart(macdContainer, {
-        layout: {
-          background: { color: "#ffffff" },
-          textColor: "#172033",
-          attributionUrl: ""
-        },
-        width: macdContainer.clientWidth,
-        height: 120,
-        timeScale: { timeVisible: false, secondsVisible: false }
-      });
-
-      let syncingTimeRange = false;
-      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-        if (!range || syncingTimeRange || !showMACD) return;
-        syncingTimeRange = true;
-        macdChart.timeScale().setVisibleLogicalRange(range);
-        syncingTimeRange = false;
-      });
-      macdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-        if (!range || syncingTimeRange || !showMACD) return;
-        syncingTimeRange = true;
-        chart.timeScale().setVisibleLogicalRange(range);
-        syncingTimeRange = false;
-      });
+      chart = { renderer: "d3-svg" };
 
       resizeObserver = new ResizeObserver(() => {
-        const w = chartContainer.clientWidth;
-        const h = chartContainer.clientHeight;
-        chart.applyOptions({ width: w, height: h });
-
-        const mw = macdContainer.clientWidth;
-        if (showMACD && mw > 0) {
-          macdChart.applyOptions({ width: mw });
-        }
+        renderChart();
       });
       resizeObserver.observe(chartContainer);
 
@@ -1830,12 +2099,9 @@
         ]));
         seriesEntries = Object.keys(dataset).map((ticker) => ({
           ticker,
-          visible: previousSelection.size
-            ? previousSelection.has(ticker)
-            : DEFAULT_TICKERS.includes(ticker)
+          visible: previousSelection.has(ticker)
         }));
         await syncPriceAlarmsFromGitHub();
-        macdParams = loadMACD();
 
         await renderChart();
         updateAlarmButtons();
@@ -1861,14 +2127,7 @@
         const selectedTickers = new Set(
           seriesEntries.filter((entry) => entry.visible).map((entry) => entry.ticker)
         );
-        seriesEntries.forEach((entry) => {
-          if (entry.series) chart.removeSeries(entry.series);
-        });
-        macdSeriesEntries.forEach((entry) => {
-          if (entry.series) macdChart.removeSeries(entry.series);
-        });
         seriesEntries = [];
-        macdSeriesEntries = [];
 
         const rangeMs = (() => {
           switch (displayRangeKey) {
@@ -1921,35 +2180,15 @@
             continue;
           }
 
-          let basisDate = indexBasisKey === "custom" ? customBasisDate : indexBasisKey;
-
-          if (basisDate === "display-start") {
-            basisDate = Math.max(cutoffTime, timestamps[0]);
-          } else if (basisDate === "first-common") {
-            basisDate = Math.max(...(getSelectedSeries().map((s) => {
-              const te = dataset[s.ticker];
-              return te?.timestamps?.[0] || 0;
-            }) || [0]));
-          } else if (basisDate !== undefined && basisDate !== null && basisDate !== "") {
-            const offset = (() => {
-              if (basisDate === "1y") return -365 * 24 * 60 * 60;
-              if (basisDate === "3y") return -3 * 365 * 24 * 60 * 60;
-              if (basisDate === "5y") return -5 * 365 * 24 * 60 * 60;
-              if (basisDate === "10y") return -10 * 365 * 24 * 60 * 60;
-              if (basisDate === "20y") return -20 * 365 * 24 * 60 * 60;
-              return 0;
-            })();
-            basisDate = Math.max(cutoffTime, Date.now() / 1000 + offset);
-          }
-
-          let basisIdx = 0;
+          const displayStart = Math.max(cutoffTime, timestamps[0]);
+          let startIndex = 0;
           for (let i = 0; i < timestamps.length; i++) {
-            if (timestamps[i] >= basisDate) {
-              basisIdx = i;
+            if (timestamps[i] >= displayStart) {
+              startIndex = i;
               break;
             }
           }
-          const basisPrice = prices[basisIdx];
+          const startPrice = prices[startIndex];
 
           const seriesData = [];
           for (let i = 0; i < prices.length; i++) {
@@ -1957,103 +2196,38 @@
 
             let value = prices[i];
             if (viewMode === "indexed") {
-              value = computeIndexedPrice(prices[i], basisPrice);
+              value = computeIndexedPrice(prices[i], startPrice);
             } else if (viewMode === "log-return") {
-              value = Math.log(prices[i] / basisPrice) * 100;
+              value = Math.log(prices[i] / startPrice) * 100;
             }
 
             seriesData.push({ time: Math.floor(timestamps[i]), value });
           }
 
           const color = getColor(ticker);
-          const lineSeries = chart.addSeries(LightweightCharts.LineSeries, {
-            color: color,
-            lineWidth: 2,
-            title: getDisplayName(ticker)
-          });
-
-          lineSeries.setData(seriesData);
-          chart.timeScale().fitContent();
-
           const alarmPrice = getPriceAlarm(ticker);
           seriesEntries.push({
             ticker,
             name: getDisplayName(ticker),
-            series: lineSeries,
             visible: isSelected,
             prices,
             timestamps,
-            basisPrice,
+            startPrice,
             color,
-            alarm: alarmPrice
+            alarm: alarmPrice,
+            chartData: seriesData.map((point) => ({
+              date: new Date(point.time * 1000),
+              value: point.value
+            }))
           });
         }
 
-        // MACD rendering
-        document.getElementById("macd-shell").classList.remove("visible");
-        if (showMACD && selectedTickers.size === 1) {
-          const selectedTicker = [...selectedTickers][0];
-          const entry = dataset[selectedTicker];
-
-          if (entry && entry.data && entry.data.length > macdParams.slow) {
-            const macdResult = calculateMACD(entry.data);
-
-            if (macdResult) {
-              const { macdLine, signalLine, histogram } = macdResult;
-              const macdSeriesData = [];
-              const signalSeriesData = [];
-              const histogramSeriesData = [];
-
-              for (let i = 0; i < macdLine.length; i++) {
-                const ts = entry.timestamps[i];
-                if (ts < timeRange[0] || ts > timeRange[1]) continue;
-                if (Number.isFinite(macdLine[i])) {
-                  macdSeriesData.push({ time: Math.floor(ts), value: macdLine[i] });
-                }
-                if (Number.isFinite(signalLine[i])) {
-                  signalSeriesData.push({ time: Math.floor(ts), value: signalLine[i] });
-                }
-                if (Number.isFinite(histogram[i])) {
-                  histogramSeriesData.push({
-                    time: Math.floor(ts),
-                    value: histogram[i],
-                    color: histogram[i] >= 0 ? "#16a34a" : "#dc2626"
-                  });
-                }
-              }
-
-              const macdLineSeries = macdChart.addSeries(LightweightCharts.LineSeries, {
-                color: "#2563eb",
-                lineWidth: 2,
-                title: "MACD"
-              });
-              macdLineSeries.setData(macdSeriesData);
-              macdSeriesEntries.push({ series: macdLineSeries });
-
-              const signalLineSeries = macdChart.addSeries(LightweightCharts.LineSeries, {
-                color: "#ea580c",
-                lineWidth: 2,
-                title: "Signal"
-              });
-              signalLineSeries.setData(signalSeriesData);
-              macdSeriesEntries.push({ series: signalLineSeries });
-
-              const histogramSeries = macdChart.addSeries(LightweightCharts.HistogramSeries, {
-                title: "Histogram"
-              });
-              histogramSeries.setData(histogramSeriesData);
-              macdSeriesEntries.push({ series: histogramSeries });
-
-              const visibleRange = chart.timeScale().getVisibleLogicalRange();
-              if (visibleRange) macdChart.timeScale().setVisibleLogicalRange(visibleRange);
-
-              document.getElementById("macd-shell").classList.add("visible");
-            }
-          }
-        }
+        renderD3Chart(seriesEntries.filter((entry) => entry.visible && entry.chartData?.length));
 
         renderLegend(getSelectedSeries(), timeRange, cutoffTime, rangeMs);
         renderForwardReturnChart(selectedTickers);
+        renderSignalChart(selectedTickers, timeRange);
+        renderSignalForwardChart(selectedTickers);
         renderCommoditySidebar();
         updateAlarmButtons();
       }, 100);
@@ -2068,17 +2242,18 @@
 
       legendContainer.innerHTML = selected
         .map((entry) => {
-          let latestPrice = entry.prices[entry.prices.length - 1];
-          let change = ((latestPrice - entry.basisPrice) / entry.basisPrice) * 100;
+          const actualLatestPrice = entry.prices[entry.prices.length - 1];
+          let displayedValue = actualLatestPrice;
+          let change = ((actualLatestPrice - entry.startPrice) / entry.startPrice) * 100;
 
           if (getViewMode() === "price") {
-            change = ((latestPrice - entry.basisPrice) / entry.basisPrice) * 100;
+            change = ((actualLatestPrice - entry.startPrice) / entry.startPrice) * 100;
           } else if (getViewMode() === "indexed") {
-            latestPrice = computeIndexedPrice(latestPrice, entry.basisPrice);
-            change = latestPrice - 100;
+            displayedValue = computeIndexedPrice(actualLatestPrice, entry.startPrice);
+            change = displayedValue - 100;
           } else if (getViewMode() === "log-return") {
-            latestPrice = Math.log(latestPrice / entry.basisPrice) * 100;
-            change = latestPrice;
+            displayedValue = Math.log(actualLatestPrice / entry.startPrice) * 100;
+            change = displayedValue;
           }
 
           const changeText = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
@@ -2091,7 +2266,7 @@
                 <strong>${entry.ticker}</strong>
                 <span class="legend-timestamp" style="color: ${changeColor};">${changeText}</span>
               </div>
-              <div class="legend-price">${formatActualPrice(latestPrice)}</div>
+              <div class="legend-price">Aktueller Kurs: ${formatActualPrice(actualLatestPrice)}${getViewMode() === "price" ? "" : ` · Anzeige: ${formatActualPrice(displayedValue)}`}</div>
             </div>
           `;
         })
@@ -2124,8 +2299,6 @@
         alarmPickMode = false;
         updateAlarmButtons();
         renderChart();
-      } else if (comparisonPickMode) {
-        // Comparison point logic can be added here
       } else {
         entry.visible = !entry.visible;
         renderChart();
@@ -2192,7 +2365,10 @@
 
           const tickerSpan = document.createElement("span");
           tickerSpan.className = "ticker";
-          tickerSpan.textContent = commodity.ticker;
+          const currentPrice = dataset?.[commodity.ticker]?.data?.at(-1);
+          tickerSpan.textContent = Number.isFinite(currentPrice)
+            ? `${commodity.ticker} · Kurs: ${formatActualPrice(currentPrice)}`
+            : commodity.ticker;
 
           nameDiv.appendChild(nameSpan);
           nameDiv.appendChild(document.createElement("br"));
@@ -2200,12 +2376,11 @@
 
           itemDiv.appendChild(nameDiv);
 
-          const indicatorsDiv = document.createElement("div");
-          indicatorsDiv.className = "commodity-indicators";
           const dataEntry = dataset?.[commodity.ticker];
           const percentile = dataEntry ? getPricePercentile(dataEntry.data) : NaN;
           const percentileDiv = document.createElement("div");
           percentileDiv.className = "commodity-percentile";
+          percentileDiv.title = "Perzentil des aktuellen Kurses in der gesamten verfügbaren Historie";
           percentileDiv.textContent = Number.isFinite(percentile)
             ? `${percentile.toFixed(1).replace(".", ",")} %`
             : "–";
@@ -2218,31 +2393,11 @@
           percentileDiv.style.color = Number.isFinite(percentile)
             ? `hsl(${percentileHue} 72% 24%)`
             : "#64748b";
-
-          const macdStrength = dataEntry ? getMACDStrength(dataEntry.data) : NaN;
-          const macdDiv = document.createElement("div");
-          macdDiv.className = "commodity-macd";
-          macdDiv.title = `MACD ${macdParams.fast}/${macdParams.slow}/${macdParams.signal}`;
-          macdDiv.textContent = Number.isFinite(macdStrength)
-            ? macdStrength.toFixed(2).replace(".", ",")
-            : "–";
-          const macdIntensity = Number.isFinite(macdStrength)
-            ? Math.abs(macdStrength)
-            : 0;
-          const macdHue = macdStrength >= 0 ? 135 : 0;
-          macdDiv.style.background = Number.isFinite(macdStrength)
-            ? `hsl(${macdHue} 65% ${94 - macdIntensity * 20}%)`
-            : "#f1f5f9";
-          macdDiv.style.color = Number.isFinite(macdStrength)
-            ? `hsl(${macdHue} 70% 25%)`
-            : "#64748b";
-
-          indicatorsDiv.append(percentileDiv, macdDiv);
-          itemDiv.appendChild(indicatorsDiv);
+          itemDiv.appendChild(percentileDiv);
 
           if (entry?.alarm) {
             const alarmDiv = document.createElement("div");
-            alarmDiv.className = "commodity-macd";
+            alarmDiv.className = "commodity-badge";
             alarmDiv.textContent = "🔔";
             alarmDiv.style.color = "#ea580c";
             itemDiv.appendChild(alarmDiv);
@@ -2257,14 +2412,6 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("default-selection").addEventListener("click", () => {
-        seriesEntries.forEach((e) => {
-          e.visible = DEFAULT_TICKERS.includes(e.ticker);
-        });
-        renderChart();
-        updateAlarmButtons();
-      });
-
       document.getElementById("select-all").addEventListener("click", () => {
         seriesEntries.forEach((e) => {
           e.visible = true;
@@ -2285,23 +2432,14 @@
         btn.addEventListener("click", handlePeriodChange);
       });
 
+      document.getElementById("signal-lookback").addEventListener("change", renderChart);
+
       document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
         radio.addEventListener("change", handleModeChange);
       });
 
-      document.getElementById("basis-button").addEventListener("click", handleBasisButtonClick);
-      document.getElementById("basis-apply").addEventListener("click", handleBasisApply);
-      document.getElementById("basis-cancel").addEventListener("click", () => {
-        document.getElementById("basis-dialog").close();
-      });
-
-      document.getElementById("comparison-point").addEventListener("click", handleComparisonPointClick);
       document.getElementById("set-price-alarm").addEventListener("click", handlePriceAlarmClick);
       document.getElementById("clear-price-alarm").addEventListener("click", handleClearPriceAlarm);
-
-      document.getElementById("toggle-macd").addEventListener("click", handleToggleMACD);
-      document.getElementById("macd-settings-button").addEventListener("click", handleMACSSettingsClick);
-      document.getElementById("macd-close").addEventListener("click", handleMACSSettingsClose);
 
       document.getElementById("toggle-events").addEventListener("click", handleEventToggle);
       document.getElementById("show-correlation").addEventListener("click", handleCorrelationClick);
@@ -2309,29 +2447,8 @@
         document.getElementById("correlation-dialog").close();
       });
 
-      document.getElementById("fullscreen-toggle").addEventListener("click", handleFullscreenToggle);
-
-      macdParams = loadMACD();
-      document.getElementById("toggle-macd").classList.toggle("active-tool", showMACD);
       renderCommoditySidebar();
       initChart();
-    });
-
-    document.addEventListener("click", (e) => {
-      if (e.target.id !== "chart") return;
-
-      if (comparisonPickMode) {
-        const coords = chart.timeScale().getVisibleLogicalRange();
-        console.log("Comparison point clicked:", coords);
-        comparisonPickMode = false;
-        document.getElementById("comparison-point").classList.remove("active-tool");
-        document.getElementById("comparison-point").textContent = "Vergleichspunkt wählen";
-      }
-
-      if (alarmPickMode) {
-        const coords = chart.timeScale().getVisibleLogicalRange();
-        console.log("Alarm price set at logical range:", coords);
-      }
     });
   </script>
 </body>
