@@ -893,10 +893,21 @@
       })));
     }
 
-    function renderForwardReturnTypeLegend(root, innerWidth) {
-      const slotWidth = Math.min(90, innerWidth / FORWARD_RETURN_SERIES.length);
-      const startX = Math.max(0, innerWidth - slotWidth * FORWARD_RETURN_SERIES.length);
-      FORWARD_RETURN_SERIES.forEach((series, index) => {
+    function sampleForwardReturnPoints(points, maxPointsPerSeries) {
+      return FORWARD_RETURN_SERIES.flatMap((series) => {
+        const seriesPoints = points.filter((point) => point.returnType === series.key);
+        const step = Math.max(1, Math.ceil(seriesPoints.length / maxPointsPerSeries));
+        return seriesPoints.filter((_, index) => index % step === 0);
+      });
+    }
+
+    function renderForwardReturnTypeLegend(root, innerWidth, includeMidpoint = false) {
+      const legendItems = includeMidpoint
+        ? [...FORWARD_RETURN_SERIES, { key: "mid", label: "Mitte", color: "#111827" }]
+        : FORWARD_RETURN_SERIES;
+      const slotWidth = Math.min(90, innerWidth / legendItems.length);
+      const startX = Math.max(0, innerWidth - slotWidth * legendItems.length);
+      legendItems.forEach((series, index) => {
         const item = root.append("g")
           .attr("transform", `translate(${startX + slotWidth * index},-12)`);
         item.append("circle").attr("cx", 4).attr("cy", 0).attr("r", 3.5).attr("fill", series.color);
@@ -1471,6 +1482,41 @@
       };
     }
 
+    function pairOutOfSamplePredictions(predictions) {
+      const byObservation = new Map();
+      predictions.forEach((point) => {
+        const key = `${point.ticker}|${point.dateLabel}|${point.horizonMonths}`;
+        if (!byObservation.has(key)) {
+          byObservation.set(key, {
+            ticker: point.ticker,
+            dateLabel: point.dateLabel,
+            futureDate: point.futureDate,
+            time: point.time,
+            horizonMonths: point.horizonMonths,
+            signal: point.signal
+          });
+        }
+        byObservation.get(key)[point.returnType] = point;
+      });
+      return [...byObservation.values()]
+        .map((pair) => {
+          if (!pair.min || !pair.max) return null;
+          const predictedMidpoint = (pair.min.predicted + pair.max.predicted) / 2;
+          if (!Number.isFinite(predictedMidpoint)) return null;
+          return {
+            ...pair,
+            predictedMidpoint,
+            minActual: pair.min.actual,
+            maxActual: pair.max.actual,
+            minPredicted: pair.min.predicted,
+            maxPredicted: pair.max.predicted,
+            minModelName: pair.min.modelName,
+            maxModelName: pair.max.modelName
+          };
+        })
+        .filter(Boolean);
+    }
+
     function getAutomaticFits(points, xKey, visibleHorizons, modelTypes) {
       const horizon = visibleHorizons[0];
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) return new Map();
@@ -1512,6 +1558,32 @@
         .attr("stroke", series.color)
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "7 4")
+        .attr("vector-effect", "non-scaling-stroke")
+        .attr("d", d3.line()
+          .defined((point) => Number.isFinite(point.valueY) && point.valueY >= yDomain[0] && point.valueY <= yDomain[1])
+          .x((point) => point.chartX)
+          .y((point) => yScale(point.valueY)));
+    }
+
+    function renderMidpointFitCurve(root, fits, xScale, yScale, xExtent) {
+      const minModel = fits?.get("min");
+      const maxModel = fits?.get("max");
+      if (!minModel || !maxModel || !xExtent || xExtent[0] === xExtent[1]) return;
+      const yDomain = yScale.domain();
+      const startChartX = xScale(xExtent[0]);
+      const endChartX = xScale(xExtent[1]);
+      const curvePoints = d3.range(121).map((index) => {
+        const chartX = startChartX + (endChartX - startChartX) * index / 120;
+        const valueX = xScale.invert(chartX);
+        const minY = minModel.predict(valueX);
+        const maxY = maxModel.predict(valueX);
+        return { chartX, valueY: (minY + maxY) / 2 };
+      });
+      root.append("path")
+        .datum(curvePoints)
+        .attr("fill", "none")
+        .attr("stroke", "#111827")
+        .attr("stroke-width", 2.3)
         .attr("vector-effect", "non-scaling-stroke")
         .attr("d", d3.line()
           .defined((point) => Number.isFinite(point.valueY) && point.valueY >= yDomain[0] && point.valueY <= yDomain[1])
@@ -1609,7 +1681,7 @@
       }
 
       const maxRenderedPoints = 1800;
-      const step = Math.max(1, Math.ceil(points.length / maxRenderedPoints));
+      const sampled = sampleForwardReturnPoints(points, Math.ceil(maxRenderedPoints / FORWARD_RETURN_SERIES.length));
       let pinned = false;
       const showForwardTooltip = (event, point, pin = false) => {
         const horizon = getForwardHorizon(point.horizonMonths);
@@ -1638,7 +1710,7 @@
           summary.textContent = `Aktuell ${point.ticker} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · ${selectedHorizon.label} Min/Max-Forward Returns noch unbekannt`;
         }
       };
-      points.filter((_, index) => index % step === 0).forEach((point) => {
+      sampled.forEach((point) => {
         root.append("circle")
           .attr("cx", xScale(point.analysisPrice)).attr("cy", yScale(point.returnValue)).attr("r", 2.3)
           .attr("fill", point.returnColor).attr("fill-opacity", 0.45);
@@ -1885,18 +1957,11 @@
         `Streudiagramm aus ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Gewicht ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
       );
       const maxRenderedPoints = 2500;
-      const step = Math.max(1, Math.ceil(points.length / maxRenderedPoints));
-      const sampled = points.filter((_, index) => index % step === 0);
+      const sampled = sampleForwardReturnPoints(points, Math.ceil(maxRenderedPoints / FORWARD_RETURN_SERIES.length));
       const currentReferences = config.showCurrentReferences === false ? [] : [...selectedTickers].map((ticker) => {
         const point = calculateSignalPoints(dataset[ticker], ticker, lookbackMonths, useLogPrice, momentumWeight).at(-1);
         return point || null;
       }).filter(Boolean);
-      const latestEvaluable = new Map();
-      if (config.highlightLatest !== false) {
-        points.forEach((point) => latestEvaluable.set(`${point.ticker}|${point.horizonMonths}|${point.returnType}`, point));
-      }
-      const latestKeys = new Set([...latestEvaluable.values()].map((point) => `${point.ticker}|${point.horizonMonths}|${point.returnType}|${point.dateLabel}`));
-
       container.replaceChildren();
       const width = Math.max(280, container.clientWidth);
       const height = Math.max(180, container.clientHeight);
@@ -1937,10 +2002,6 @@
       marks.selectAll("circle.signal-point").data(sampled).join("circle")
         .attr("class", "signal-point").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 3)
         .attr("fill", (point) => point.returnColor).attr("fill-opacity", 0.5);
-      [...latestEvaluable.values()].forEach((point) => {
-        root.append("circle").attr("cx", x(point.signal)).attr("cy", y(point.returnValue)).attr("r", 6)
-          .attr("fill", "none").attr("stroke", point.returnColor).attr("stroke-width", 2);
-      });
       if (AUTO_FIT_HORIZONS.has(selectedHorizon.months)) {
         FORWARD_RETURN_SERIES.forEach((series) => {
           const seriesPoints = points.filter((point) => point.returnType === series.key);
@@ -1953,8 +2014,15 @@
             d3.extent(seriesPoints, (point) => point.signal)
           );
         });
+        renderMidpointFitCurve(
+          root,
+          automaticFits,
+          x,
+          y,
+          d3.extent(points, (point) => point.signal)
+        );
       }
-      renderForwardReturnTypeLegend(root, innerWidth);
+      renderForwardReturnTypeLegend(root, innerWidth, AUTO_FIT_HORIZONS.has(selectedHorizon.months));
 
       const tooltip = document.createElement("div");
       tooltip.className = "chart-tooltip";
@@ -1970,7 +2038,7 @@
       marks.selectAll("circle.signal-hit").data(sampled).join("circle")
         .attr("class", "signal-hit").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 10)
         .attr("fill", "transparent").style("cursor", "pointer")
-        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % · Max ${point.maxReturn.toFixed(1).replace(".", ",")} %<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>${latestKeys.has(`${point.ticker}|${point.horizonMonths}|${point.returnType}|${point.dateLabel}`) ? "<br><b>Zuletzt auswertbarer Punkt</b>" : ""}`, x(point.signal), y(point.returnValue)))
+        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % · Max ${point.maxReturn.toFixed(1).replace(".", ",")} %<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue)))
         .on("click", (_, point) => {
           const horizon = getForwardHorizon(point.horizonMonths);
           showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue), true);
@@ -2057,8 +2125,7 @@
         pointsAlreadyExpanded: true,
         automaticFitsOverride: split.models,
         summaryPrefix: `${trainingStartLabel} bis ${cutoffLabel} · ${trainingYears} Jahre · ohne lineares Modell`,
-        showCurrentReferences: false,
-        highlightLatest: false
+        showCurrentReferences: false
       });
 
       const results = FORWARD_RETURN_SERIES.map((series) => {
@@ -2080,69 +2147,99 @@
       ).join(" | ");
       container.setAttribute("aria-label", `Out-of-Sample-Vergleich nach festem In-Sample-Training von ${trainingStartLabel} bis ${cutoffLabel}. ${summary.textContent}`);
 
-      const predictions = results.flatMap(({ series, predictions: seriesPredictions }) =>
-        seriesPredictions.map((point) => ({ ...point, color: series.color }))
-      );
-      const values = predictions.flatMap((point) => [point.actual, point.predicted]).filter(Number.isFinite);
-      const extent = d3.extent(values);
-      const span = Math.max(extent[1] - extent[0], 1);
-      const domain = [Math.min(0, extent[0] - span * 0.06), Math.max(0, extent[1] + span * 0.06)];
+      const pairedPredictions = pairOutOfSamplePredictions(split.predictions);
+      if (!pairedPredictions.length) {
+        summary.textContent = "Für den Mittelwert aus Min- und Max-Modell gibt es zu wenig Out-of-Sample-Paare.";
+        showAnalysisEmpty(container, "Zu wenig paarige Min/Max-Prognosen.");
+        return;
+      }
+      const xExtent = d3.extent(pairedPredictions, (point) => point.predictedMidpoint);
+      const xSpan = Math.max((xExtent[1] || 0) - (xExtent[0] || 0), 1);
+      const xDomain = [xExtent[0] - xSpan * 0.06, xExtent[1] + xSpan * 0.06];
+      const maxExtent = d3.extent(pairedPredictions, (point) => point.maxActual);
+      const minExtent = d3.extent(pairedPredictions, (point) => point.minActual);
+      const maxSpan = Math.max((maxExtent[1] || 0) - (maxExtent[0] || 0), 1);
+      const minSpan = Math.max((minExtent[1] || 0) - (minExtent[0] || 0), 1);
       const width = Math.max(280, container.clientWidth);
       const height = Math.max(180, container.clientHeight);
-      const margin = { top: 34, right: 18, bottom: 50, left: 62 };
+      const margin = { top: 34, right: 62, bottom: 50, left: 62 };
       const innerWidth = width - margin.left - margin.right;
       const innerHeight = height - margin.top - margin.bottom;
-      const x = d3.scaleLinear().domain(domain).nice().range([0, innerWidth]);
-      const y = d3.scaleLinear().domain(x.domain()).range([innerHeight, 0]);
+      const x = d3.scaleLinear().domain(xDomain).nice().range([0, innerWidth]);
+      const yMax = d3.scaleLinear()
+        .domain([Math.min(0, (maxExtent[0] || 0) - maxSpan * 0.08), (maxExtent[1] || 0) + maxSpan * 0.08])
+        .nice().range([innerHeight, 0]);
+      const yMin = d3.scaleLinear()
+        .domain([(minExtent[0] || 0) - minSpan * 0.08, Math.max(0, (minExtent[1] || 0) + minSpan * 0.08)])
+        .nice().range([innerHeight, 0]);
       const svg = d3.select(container).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("aria-hidden", "true");
       const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-      root.append("g").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""))
+      root.append("g").call(d3.axisLeft(yMax).ticks(5).tickSize(-innerWidth).tickFormat(""))
         .call((group) => group.select(".domain").remove())
         .call((group) => group.selectAll("line").attr("stroke", "#d7dee8").attr("stroke-width", 0.75).attr("shape-rendering", "crispEdges"));
       root.append("g").attr("transform", `translate(0,${innerHeight})`)
         .call(d3.axisBottom(x).ticks(width < 480 ? 3 : 5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
-      root.append("g").call(d3.axisLeft(y).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
+      root.append("g").call(d3.axisLeft(yMax).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
+        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
+      root.append("g").attr("transform", `translate(${innerWidth},0)`)
+        .call(d3.axisRight(yMin).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 42).attr("text-anchor", "middle")
-        .attr("fill", "#334155").attr("font-size", 10).text("Tatsächlicher Min/Max-Return");
+        .attr("fill", "#334155").attr("font-size", 10).text("Prognostizierter Mittelwert aus Min-/Max-Modell");
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
-        .attr("fill", "#334155").attr("font-size", 10).text("Prognostizierter Min/Max-Return");
+        .attr("fill", "#16a34a").attr("font-size", 10).text("Tatsächlicher Max-Return");
+      root.append("text").attr("transform", "rotate(90)").attr("x", innerHeight / 2).attr("y", -innerWidth - 48).attr("text-anchor", "middle")
+        .attr("fill", "#dc2626").attr("font-size", 10).text("Tatsächlicher Min-Return");
 
       const legend = root.append("g").attr("transform", "translate(0,-18)");
       legend.append("text").attr("x", 0).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(`OOS ab ${cutoffLabel}`);
-      results.forEach(({ series }, index) => {
-        const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - results.length * 40) + index * 40},0)`)
-          .attr("aria-label", `${series.label}-Return`);
+      [
+        { label: "Max", color: "#16a34a" },
+        { label: "Min", color: "#dc2626" },
+        { label: "Mitte-Prognose", color: "#111827" }
+      ].forEach((series, index) => {
+        const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 170) + index * 58},0)`);
         item.append("circle").attr("r", 4).attr("fill", series.color);
         item.append("text").attr("x", 7).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(series.label);
       });
 
       const maxMarks = 1800;
-      const sampleStep = Math.max(1, Math.ceil(predictions.length / maxMarks));
-      const sampled = predictions.filter((_, index) => index % sampleStep === 0);
+      const sampleStep = Math.max(1, Math.ceil(pairedPredictions.length / maxMarks));
+      const sampled = pairedPredictions.filter((_, index) => index % sampleStep === 0);
       const marks = root.append("g");
-      marks.selectAll("circle.backtest-point").data(sampled).join("circle")
-        .attr("class", "backtest-point")
-        .attr("cx", (point) => x(point.actual)).attr("cy", (point) => y(point.predicted)).attr("r", 3.2)
-        .attr("fill", (point) => point.color)
+      marks.selectAll("line.backtest-midpoint-rug").data(sampled).join("line")
+        .attr("class", "backtest-midpoint-rug")
+        .attr("x1", (point) => x(point.predictedMidpoint)).attr("x2", (point) => x(point.predictedMidpoint))
+        .attr("y1", innerHeight - 7).attr("y2", innerHeight)
+        .attr("stroke", "#111827").attr("stroke-width", 1.2).attr("stroke-opacity", 0.55);
+      marks.selectAll("circle.backtest-max-point").data(sampled).join("circle")
+        .attr("class", "backtest-max-point")
+        .attr("cx", (point) => x(point.predictedMidpoint)).attr("cy", (point) => yMax(point.maxActual)).attr("r", 3.2)
+        .attr("fill", "#16a34a")
         .attr("fill-opacity", 0.65)
-        .attr("stroke", (point) => point.color).attr("stroke-width", 1.1);
+        .attr("stroke", "#16a34a").attr("stroke-width", 1.1);
+      marks.selectAll("circle.backtest-min-point").data(sampled).join("circle")
+        .attr("class", "backtest-min-point")
+        .attr("cx", (point) => x(point.predictedMidpoint)).attr("cy", (point) => yMin(point.minActual)).attr("r", 3.2)
+        .attr("fill", "#dc2626")
+        .attr("fill-opacity", 0.65)
+        .attr("stroke", "#dc2626").attr("stroke-width", 1.1);
 
       const tooltip = document.createElement("div");
       tooltip.className = "chart-tooltip";
       container.appendChild(tooltip);
       let pinned = false;
       const showTooltip = (point, pin = false) => {
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} ${point.returnLabel} · Out-of-Sample<br>Tatsächlich: ${point.actual.toFixed(1).replace(".", ",")} %<br>Prognose: ${point.predicted.toFixed(1).replace(".", ",")} %<br>Modell aus In-Sample: ${point.modelName}`;
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognostizierter Mittelwert: ${point.predictedMidpoint.toFixed(1).replace(".", ",")} %<br>Max tatsächlich: ${point.maxActual.toFixed(1).replace(".", ",")} %<br>Min tatsächlich: ${point.minActual.toFixed(1).replace(".", ",")} %<br>Max-Prognose: ${point.maxPredicted.toFixed(1).replace(".", ",")} % · Min-Prognose: ${point.minPredicted.toFixed(1).replace(".", ",")} %`;
         tooltip.style.display = "block";
-        tooltip.style.left = `${Math.min(width - 220, Math.max(8, margin.left + x(point.actual) + 10))}px`;
-        tooltip.style.top = `${Math.min(height - 110, Math.max(8, margin.top + y(point.predicted) - 35))}px`;
+        tooltip.style.left = `${Math.min(width - 240, Math.max(8, margin.left + x(point.predictedMidpoint) + 10))}px`;
+        tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + yMax(point.maxActual) - 35))}px`;
         if (pin) pinned = true;
       };
       marks.selectAll("circle.backtest-hit").data(sampled).join("circle")
-        .attr("class", "backtest-hit").attr("cx", (point) => x(point.actual)).attr("cy", (point) => y(point.predicted)).attr("r", 9)
+        .attr("class", "backtest-hit").attr("cx", (point) => x(point.predictedMidpoint)).attr("cy", (point) => yMax(point.maxActual)).attr("r", 9)
         .attr("fill", "transparent").style("cursor", "pointer")
         .on("pointerenter", (_, point) => showTooltip(point))
         .on("click", (_, point) => showTooltip(point, true))
