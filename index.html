@@ -684,12 +684,22 @@
           <aside class="forward-panel" aria-labelledby="forward-title">
             <div class="forward-header">
               <div class="forward-heading-row">
-              <h2 id="forward-title" class="forward-title">Preis vs. Ø Min/Max-Forward Return</h2>
+                <h2 id="forward-title" class="forward-title">Preis vs. Min/Max-Forward Return</h2>
+                <label class="control-label" for="forward-horizon">
+                  Horizont:
+                  <select id="forward-horizon" aria-label="Forward-Return-Horizont">
+                    <option value="1">1M</option>
+                    <option value="3">3M</option>
+                    <option value="6">6M</option>
+                    <option value="12" selected>12M</option>
+                    <option value="24">24M</option>
+                  </select>
+                </label>
               </div>
               <p id="forward-summary" class="forward-summary">Ausgewählte Rohstoffe werden analysiert.</p>
-              <p id="forward-note" class="forward-note">Wochenwerte · automatische Modellkurven nur für 12M und 24M</p>
+              <p id="forward-note" class="forward-note">Wochenwerte · Min rot, Max grün · Modellkurven bei 12M/24M</p>
             </div>
-            <div id="forward-chart" class="forward-chart" role="img" aria-label="Streudiagramm von historischem Preis und Forward Returns für 1, 3, 6, 12 und 24 Monate">
+            <div id="forward-chart" class="forward-chart" role="img" aria-label="Streudiagramm von historischem Preis und Min-/Max-Forward Returns für den gewählten Horizont">
               <div id="forward-tooltip" class="forward-tooltip"></div>
             </div>
           </aside>
@@ -717,10 +727,10 @@
 
           <section class="analysis-panel" aria-labelledby="signal-forward-title">
             <div class="analysis-header">
-              <h2 id="signal-forward-title" class="forward-title">2M-Indikator (α 1) vs. Ø Min/Max-Forward Return</h2>
-              <p id="signal-forward-summary" class="forward-summary">Automatische Modellkurven nur für 12M und 24M.</p>
+              <h2 id="signal-forward-title" class="forward-title">2M-Indikator (α 1) vs. Min/Max-Forward Return</h2>
+              <p id="signal-forward-summary" class="forward-summary">Min und Max werden als getrennte Modelle gerechnet.</p>
             </div>
-            <div id="signal-forward-chart" class="analysis-chart" role="img" aria-label="Streudiagramm aus Momentum-Indikator und Forward Returns für 1, 3, 6, 12 und 24 Monate"></div>
+            <div id="signal-forward-chart" class="analysis-chart" role="img" aria-label="Streudiagramm aus Momentum-Indikator und Min-/Max-Forward Returns für den gewählten Horizont"></div>
           </section>
 
           <section class="analysis-panel" aria-labelledby="in-sample-title">
@@ -838,69 +848,59 @@
     };
 
     const FORWARD_HORIZONS = [
-      { months: 1, label: "1M", color: "#2563eb" },
-      { months: 3, label: "3M", color: "#0891b2" },
-      { months: 6, label: "6M", color: "#16a34a" },
-      { months: 12, label: "12M", color: "#ea580c" },
-      { months: 24, label: "24M", color: "#7c3aed" }
+      { months: 1, label: "1M" },
+      { months: 3, label: "3M" },
+      { months: 6, label: "6M" },
+      { months: 12, label: "12M" },
+      { months: 24, label: "24M" }
     ];
     const AUTO_FIT_HORIZONS = new Set([12, 24]);
     const NONLINEAR_MODEL_TYPES = ["logarithmic", "exponential", "power", "quadratic", "cubic", "quartic"];
-    const activeForwardHorizons = new Set(FORWARD_HORIZONS.map((horizon) => horizon.months));
+    const FORWARD_RETURN_SERIES = [
+      { key: "min", label: "Min", color: "#dc2626", valueKey: "minReturn", dateKey: "minDate", priceKey: "minPrice" },
+      { key: "max", label: "Max", color: "#16a34a", valueKey: "maxReturn", dateKey: "maxDate", priceKey: "maxPrice" }
+    ];
 
     function getForwardHorizon(months) {
       return FORWARD_HORIZONS.find((horizon) => horizon.months === months) || FORWARD_HORIZONS[0];
     }
 
+    function getForwardReturnSeries(key) {
+      return FORWARD_RETURN_SERIES.find((series) => series.key === key) || FORWARD_RETURN_SERIES[0];
+    }
+
+    function readForwardHorizonMonths() {
+      const input = document.getElementById("forward-horizon");
+      const parsed = Number(input?.value);
+      const selected = FORWARD_HORIZONS.some((horizon) => horizon.months === parsed) ? parsed : 12;
+      if (input && input.value !== String(selected)) input.value = String(selected);
+      return selected;
+    }
+
     function getVisibleForwardHorizons() {
-      return FORWARD_HORIZONS.filter((horizon) => activeForwardHorizons.has(horizon.months));
+      return [getForwardHorizon(readForwardHorizonMonths())];
     }
 
-    function toggleForwardHorizon(months) {
-      if (activeForwardHorizons.has(months)) {
-        if (activeForwardHorizons.size === 1) return;
-        activeForwardHorizons.delete(months);
-      } else {
-        activeForwardHorizons.add(months);
-      }
-      const selectedTickers = new Set(
-        seriesEntries.filter((entry) => entry.visible).map((entry) => entry.ticker)
-      );
-      renderForwardReturnChart(selectedTickers);
-      renderSignalForwardChart(selectedTickers);
-      renderFixedTrainTestBacktest(selectedTickers);
+    function expandForwardReturnTypes(points) {
+      return points.flatMap((point) => FORWARD_RETURN_SERIES.map((series) => ({
+        ...point,
+        returnType: series.key,
+        returnLabel: series.label,
+        returnColor: series.color,
+        targetDate: point[series.dateKey],
+        targetPrice: point[series.priceKey],
+        returnValue: point[series.valueKey]
+      })));
     }
 
-    function renderForwardHorizonLegend(root, innerWidth) {
-      const slotWidth = innerWidth / FORWARD_HORIZONS.length;
-      FORWARD_HORIZONS.forEach((horizon, index) => {
-        const active = activeForwardHorizons.has(horizon.months);
+    function renderForwardReturnTypeLegend(root, innerWidth) {
+      const slotWidth = Math.min(90, innerWidth / FORWARD_RETURN_SERIES.length);
+      const startX = Math.max(0, innerWidth - slotWidth * FORWARD_RETURN_SERIES.length);
+      FORWARD_RETURN_SERIES.forEach((series, index) => {
         const item = root.append("g")
-          .attr("transform", `translate(${slotWidth * (index + 0.5)},0)`)
-          .attr("role", "button")
-          .attr("tabindex", 0)
-          .attr("aria-label", `${horizon.label}-Return ${active ? "ausblenden" : "einblenden"}`)
-          .attr("aria-pressed", active ? "true" : "false")
-          .style("cursor", "pointer")
-          .style("opacity", active ? 1 : 0.28)
-          .on("click", () => toggleForwardHorizon(horizon.months))
-          .on("keydown", (event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            toggleForwardHorizon(horizon.months);
-          });
-        const hitArea = item.append("rect")
-          .attr("x", -slotWidth / 2 + 2).attr("y", -24)
-          .attr("width", Math.max(30, slotWidth - 4)).attr("height", 22)
-          .attr("rx", 3).attr("fill", "transparent").attr("stroke", "transparent");
-        item.on("focus", () => hitArea.attr("stroke", "#64748b"))
-          .on("blur", () => hitArea.attr("stroke", "transparent"));
-        item.append("circle").attr("cx", -10).attr("cy", -12).attr("r", 3.5).attr("fill", horizon.color);
-        item.append("text").attr("x", -3).attr("y", -9).attr("fill", "#334155").attr("font-size", 10).text(horizon.label);
-        if (!active) {
-          item.append("line").attr("x1", -15).attr("x2", 17).attr("y1", -12).attr("y2", -12)
-            .attr("stroke", "#475569").attr("stroke-width", 1.5);
-        }
+          .attr("transform", `translate(${startX + slotWidth * index},-12)`);
+        item.append("circle").attr("cx", 4).attr("cy", 0).attr("r", 3.5).attr("fill", series.color);
+        item.append("text").attr("x", 12).attr("y", 3).attr("fill", "#334155").attr("font-size", 10).text(series.label);
       });
     }
 
@@ -1078,7 +1078,7 @@
 
     function calculateForwardReturnPoints(entry, ticker, horizonMonths, useLogPrice = false) {
       entry.forwardReturnPointsByHorizon ||= {};
-      const cacheKey = `mean-min-max-${horizonMonths}-${useLogPrice ? "log" : "normal"}`;
+      const cacheKey = `min-max-${horizonMonths}-${useLogPrice ? "log" : "normal"}`;
       if (entry.forwardReturnPointsByHorizon[cacheKey]) {
         return entry.forwardReturnPointsByHorizon[cacheKey];
       }
@@ -1134,8 +1134,7 @@
           maxDate: maximum.dateLabel,
           maxPrice: maximum.price,
           maxReturn,
-          horizonMonths,
-          returnValue: (minReturn + maxReturn) / 2
+          horizonMonths
         });
       }
       entry.forwardReturnPointsByHorizon[cacheKey] = points;
@@ -1234,8 +1233,7 @@
           maxDate: forwardPoint.maxDate,
           maxPrice: forwardPoint.maxPrice,
           maxReturn: forwardPoint.maxReturn,
-          horizonMonths,
-          returnValue: forwardPoint.returnValue
+          horizonMonths
         });
       });
       entry.signalForwardPoints[cacheKey] = points;
@@ -1434,25 +1432,29 @@
       const outOfSamplePoints = timed.filter((point) => point._modelTime > cutoffTime);
       if (training.length < 40 || outOfSamplePoints.length < 10) return null;
 
-      const visibleModelHorizons = [...new Set(timed.map((point) => point.horizonMonths))]
-        .filter((months) => AUTO_FIT_HORIZONS.has(months));
-      const models = new Map(visibleModelHorizons.map((months) => [
-        months,
+      const visibleReturnTypes = [...new Set(timed.map((point) => point.returnType))]
+        .filter(Boolean);
+      const models = new Map(visibleReturnTypes.map((returnType) => [
+        returnType,
         selectBestRegressionModel(
-          training.filter((point) => point.horizonMonths === months),
+          training.filter((point) => point.returnType === returnType),
           xKey,
           NONLINEAR_MODEL_TYPES
         )
       ]));
       const predictions = outOfSamplePoints.map((point) => {
-        const model = models.get(point.horizonMonths);
+        const model = models.get(point.returnType);
         if (!model) return null;
+        const series = getForwardReturnSeries(point.returnType);
         return {
           ticker: point.ticker,
           dateLabel: point.dateLabel,
           futureDate: point.futureDate,
           time: point._modelTime,
           horizonMonths: point.horizonMonths,
+          returnType: point.returnType,
+          returnLabel: point.returnLabel || series.label,
+          returnColor: point.returnColor || series.color,
           signal: point[xKey],
           actual: point.returnValue,
           predicted: model.predict(point[xKey]),
@@ -1470,27 +1472,31 @@
     }
 
     function getAutomaticFits(points, xKey, visibleHorizons, modelTypes) {
-      return new Map(visibleHorizons
-        .filter((horizon) => AUTO_FIT_HORIZONS.has(horizon.months))
-        .map((horizon) => [
-          horizon.months,
-          selectBestRegressionModel(points.filter((point) => point.horizonMonths === horizon.months), xKey, modelTypes)
+      const horizon = visibleHorizons[0];
+      if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) return new Map();
+      return new Map(FORWARD_RETURN_SERIES
+        .map((series) => [
+          series.key,
+          selectBestRegressionModel(points.filter((point) => point.returnType === series.key), xKey, modelTypes)
         ]));
     }
 
     function describeAutomaticFits(fits, visibleHorizons) {
-      const descriptions = visibleHorizons
-        .filter((horizon) => AUTO_FIT_HORIZONS.has(horizon.months))
-        .map((horizon) => {
-          const model = fits.get(horizon.months);
-          if (!model) return `${horizon.label}: zu wenig Daten`;
+      const horizon = visibleHorizons[0];
+      if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
+        return "Automatische Anpassung ist für 12M und 24M verfügbar.";
+      }
+      const descriptions = FORWARD_RETURN_SERIES
+        .map((series) => {
+          const model = fits.get(series.key);
+          if (!model) return `${series.label}: zu wenig Daten`;
           const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
-          return `${horizon.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
+          return `${horizon.label} ${series.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
         });
-      return descriptions.length ? `Automatische Anpassung · ${descriptions.join(" | ")}` : "12M oder 24M aktivieren, um die automatische Anpassung zu sehen.";
+      return descriptions.length ? `Automatische Anpassung · ${descriptions.join(" | ")}` : "Automatische Anpassung ist für 12M und 24M verfügbar.";
     }
 
-    function renderAutomaticFitCurve(root, model, horizon, xScale, yScale, xExtent) {
+    function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
       if (!model || !xExtent || xExtent[0] === xExtent[1]) return;
       const yDomain = yScale.domain();
       const startChartX = xScale(xExtent[0]);
@@ -1503,7 +1509,7 @@
       root.append("path")
         .datum(curvePoints)
         .attr("fill", "none")
-        .attr("stroke", horizon.color)
+        .attr("stroke", series.color)
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "7 4")
         .attr("vector-effect", "non-scaling-stroke")
@@ -1523,17 +1529,21 @@
       container.querySelector("svg")?.remove();
       tooltip.style.display = "none";
       const useLogPrice = getViewMode() === "log-return";
-      title.textContent = useLogPrice ? "ln(Preis) vs. Ø Min/Max-Forward Return" : "Preis vs. Ø Min/Max-Forward Return";
+      const selectedHorizon = getVisibleForwardHorizons()[0];
+      title.textContent = useLogPrice
+        ? `ln(Preis) vs. Min/Max-Forward Return (${selectedHorizon.label})`
+        : `Preis vs. Min/Max-Forward Return (${selectedHorizon.label})`;
       const tickers = [...selectedTickers];
       if (!tickers.length) {
         summary.textContent = "Keine Reihe ausgewählt.";
         return;
       }
 
-      const visibleForwardHorizons = getVisibleForwardHorizons();
-      const points = visibleForwardHorizons.flatMap((horizon) =>
+      const visibleForwardHorizons = [selectedHorizon];
+      const basePoints = visibleForwardHorizons.flatMap((horizon) =>
         tickers.flatMap((ticker) => calculateForwardReturnPoints(dataset[ticker], ticker, horizon.months, useLogPrice))
       );
+      const points = expandForwardReturnTypes(basePoints);
       if (!points.length) {
         summary.textContent = "Zu wenig Historie für eine vollständige Analyse.";
         return;
@@ -1548,7 +1558,7 @@
       summary.textContent = fitDescription;
       container.setAttribute(
         "aria-label",
-        `Streudiagramm: ${useLogPrice ? "natürlicher Logarithmus des historischen Preises gegen Ø Min/Max-Forward Returns" : "historischer Preis gegen Ø Min/Max-Forward Returns"} nach 1, 3, 6, 12 und 24 Monaten. ${fitDescription}`
+        `Streudiagramm: ${useLogPrice ? "natürlicher Logarithmus des historischen Preises gegen Min- und Max-Forward Returns" : "historischer Preis gegen Min- und Max-Forward Returns"} für ${selectedHorizon.label}. ${fitDescription}`
       );
 
       const width = Math.max(280, container.clientWidth);
@@ -1592,7 +1602,7 @@
       root.append("text").attr("transform", "rotate(-90)")
         .attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
         .attr("fill", "#64748b").attr("font-size", 9)
-        .text("Ø Min/Max-Forward Return");
+        .text("Min/Max-Forward Return");
       if (yScale.domain()[0] < 0 && yScale.domain()[1] > 0) {
         root.append("line").attr("x1", 0).attr("x2", innerWidth)
           .attr("y1", yScale(0)).attr("y2", yScale(0)).attr("stroke", "#94a3b8");
@@ -1603,18 +1613,18 @@
       let pinned = false;
       const showForwardTooltip = (event, point, pin = false) => {
         const horizon = getForwardHorizon(point.horizonMonths);
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.date}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b>Ø Min/Max-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</b>`;
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.date}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`;
         const rect = container.getBoundingClientRect();
         tooltip.style.display = "block";
         tooltip.style.left = `${Math.min(width - 220, Math.max(6, event.clientX - rect.left + 10))}px`;
         tooltip.style.top = `${Math.min(height - 70, Math.max(6, event.clientY - rect.top - 54))}px`;
         if (pin) {
           pinned = true;
-          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.date} · ${horizon.label} Ø Min/Max-Return ${point.returnValue.toFixed(1).replace(".", ",")} %`;
+          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.date} · ${horizon.label} ${point.returnLabel}-Return ${point.returnValue.toFixed(1).replace(".", ",")} %`;
         }
       };
       const showCurrentPriceTooltip = (event, point, pin = false) => {
-        tooltip.innerHTML = `<b>Aktuell ${point.ticker}</b> · ${point.dateLabel}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>Ø Min/Max-Forward Returns: noch unbekannt`;
+        tooltip.innerHTML = `<b>Aktuell ${point.ticker}</b> · ${point.dateLabel}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${selectedHorizon.label} Min/Max-Forward Returns: noch unbekannt`;
         const rect = container.getBoundingClientRect();
         const fallbackX = rect.left + margin.left + xScale(point.analysisPrice);
         const fallbackY = rect.top + margin.top + 20;
@@ -1625,14 +1635,13 @@
         tooltip.style.top = `${Math.min(height - 70, Math.max(6, clientY - rect.top - 30))}px`;
         if (pin) {
           pinned = true;
-          summary.textContent = `Aktuell ${point.ticker} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · Ø Min/Max-Forward Returns noch unbekannt`;
+          summary.textContent = `Aktuell ${point.ticker} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · ${selectedHorizon.label} Min/Max-Forward Returns noch unbekannt`;
         }
       };
       points.filter((_, index) => index % step === 0).forEach((point) => {
-        const horizon = getForwardHorizon(point.horizonMonths);
         root.append("circle")
           .attr("cx", xScale(point.analysisPrice)).attr("cy", yScale(point.returnValue)).attr("r", 2.3)
-          .attr("fill", horizon.color).attr("fill-opacity", 0.45);
+          .attr("fill", point.returnColor).attr("fill-opacity", 0.45);
         root.append("circle")
           .attr("cx", xScale(point.analysisPrice)).attr("cy", yScale(point.returnValue)).attr("r", 9)
           .attr("fill", "transparent").style("cursor", "pointer")
@@ -1641,20 +1650,20 @@
           .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
       });
 
-      visibleForwardHorizons
-        .filter((horizon) => AUTO_FIT_HORIZONS.has(horizon.months))
-        .forEach((horizon) => {
-          const horizonPoints = points.filter((point) => point.horizonMonths === horizon.months);
+      if (AUTO_FIT_HORIZONS.has(selectedHorizon.months)) {
+        FORWARD_RETURN_SERIES.forEach((series) => {
+          const seriesPoints = points.filter((point) => point.returnType === series.key);
           renderAutomaticFitCurve(
             root,
-            automaticFits.get(horizon.months),
-            horizon,
+            automaticFits.get(series.key),
+            series,
             xScale,
             yScale,
-            d3.extent(horizonPoints, (point) => point.analysisPrice)
+            d3.extent(seriesPoints, (point) => point.analysisPrice)
           );
         });
-      renderForwardHorizonLegend(root, innerWidth);
+      }
+      renderForwardReturnTypeLegend(root, innerWidth);
       currentReferences.forEach((point, index) => {
         const currentX = xScale(point.analysisPrice);
         root.append("line")
@@ -1852,13 +1861,15 @@
       if (!container || !summary || !title || !dataset || !window.d3) return;
       const { lookbackMonths, momentumWeight } = config;
       const useLogPrice = getViewMode() === "log-return";
-      title.textContent = config.titleText || `${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator (α ${formatMomentumWeight(momentumWeight)}) vs. Ø Min/Max-Forward Return`;
       const visibleForwardHorizons = config.visibleForwardHorizons || getVisibleForwardHorizons();
-      const points = config.pointsOverride || visibleForwardHorizons.flatMap((horizon) =>
+      const selectedHorizon = visibleForwardHorizons[0] || getVisibleForwardHorizons()[0];
+      title.textContent = config.titleText || `${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator (α ${formatMomentumWeight(momentumWeight)}) vs. Min/Max-Forward Return (${selectedHorizon.label})`;
+      const basePoints = config.pointsOverride || visibleForwardHorizons.flatMap((horizon) =>
         [...selectedTickers].flatMap((ticker) =>
           calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice, momentumWeight)
         )
       );
+      const points = config.pointsAlreadyExpanded ? basePoints : expandForwardReturnTypes(basePoints);
       if (!points.length) {
         summary.textContent = selectedTickers.size ? "Für diese Kombination sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
         showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
@@ -1871,7 +1882,7 @@
       summary.textContent = displayedSummary;
       container.setAttribute(
         "aria-label",
-        `Streudiagramm aus ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Gewicht ${formatMomentumWeight(momentumWeight)} und Ø Min/Max-Forward Returns. ${displayedSummary}`
+        `Streudiagramm aus ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Gewicht ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
       );
       const maxRenderedPoints = 2500;
       const step = Math.max(1, Math.ceil(points.length / maxRenderedPoints));
@@ -1882,9 +1893,9 @@
       }).filter(Boolean);
       const latestEvaluable = new Map();
       if (config.highlightLatest !== false) {
-        points.forEach((point) => latestEvaluable.set(`${point.ticker}|${point.horizonMonths}`, point));
+        points.forEach((point) => latestEvaluable.set(`${point.ticker}|${point.horizonMonths}|${point.returnType}`, point));
       }
-      const latestKeys = new Set([...latestEvaluable.values()].map((point) => `${point.ticker}|${point.horizonMonths}|${point.dateLabel}`));
+      const latestKeys = new Set([...latestEvaluable.values()].map((point) => `${point.ticker}|${point.horizonMonths}|${point.returnType}|${point.dateLabel}`));
 
       container.replaceChildren();
       const width = Math.max(280, container.clientWidth);
@@ -1920,30 +1931,30 @@
         .attr("fill", "#334155").attr("font-size", 10)
         .text(`((1−α)+α·${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Momentum) ÷ Preis · α=${formatMomentumWeight(momentumWeight)}`);
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
-        .attr("fill", "#334155").attr("font-size", 10).text("Ø Min/Max-Forward Return");
+        .attr("fill", "#334155").attr("font-size", 10).text("Min/Max-Forward Return");
 
       const marks = root.append("g");
       marks.selectAll("circle.signal-point").data(sampled).join("circle")
         .attr("class", "signal-point").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 3)
-        .attr("fill", (point) => getForwardHorizon(point.horizonMonths).color).attr("fill-opacity", 0.5);
+        .attr("fill", (point) => point.returnColor).attr("fill-opacity", 0.5);
       [...latestEvaluable.values()].forEach((point) => {
         root.append("circle").attr("cx", x(point.signal)).attr("cy", y(point.returnValue)).attr("r", 6)
-          .attr("fill", "none").attr("stroke", getForwardHorizon(point.horizonMonths).color).attr("stroke-width", 2);
+          .attr("fill", "none").attr("stroke", point.returnColor).attr("stroke-width", 2);
       });
-      visibleForwardHorizons
-        .filter((horizon) => AUTO_FIT_HORIZONS.has(horizon.months))
-        .forEach((horizon) => {
-          const horizonPoints = points.filter((point) => point.horizonMonths === horizon.months);
+      if (AUTO_FIT_HORIZONS.has(selectedHorizon.months)) {
+        FORWARD_RETURN_SERIES.forEach((series) => {
+          const seriesPoints = points.filter((point) => point.returnType === series.key);
           renderAutomaticFitCurve(
             root,
-            automaticFits.get(horizon.months),
-            horizon,
+            automaticFits.get(series.key),
+            series,
             x,
             y,
-            d3.extent(horizonPoints, (point) => point.signal)
+            d3.extent(seriesPoints, (point) => point.signal)
           );
         });
-      renderForwardHorizonLegend(root, innerWidth);
+      }
+      renderForwardReturnTypeLegend(root, innerWidth);
 
       const tooltip = document.createElement("div");
       tooltip.className = "chart-tooltip";
@@ -1959,11 +1970,11 @@
       marks.selectAll("circle.signal-hit").data(sampled).join("circle")
         .attr("class", "signal-hit").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 10)
         .attr("fill", "transparent").style("cursor", "pointer")
-        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % · Max ${point.maxReturn.toFixed(1).replace(".", ",")} %<br><b>Ø Min/Max-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</b>${latestKeys.has(`${point.ticker}|${point.horizonMonths}|${point.dateLabel}`) ? "<br><b>Zuletzt auswertbarer Punkt</b>" : ""}`, x(point.signal), y(point.returnValue)))
+        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % · Max ${point.maxReturn.toFixed(1).replace(".", ",")} %<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>${latestKeys.has(`${point.ticker}|${point.horizonMonths}|${point.returnType}|${point.dateLabel}`) ? "<br><b>Zuletzt auswertbarer Punkt</b>" : ""}`, x(point.signal), y(point.returnValue)))
         .on("click", (_, point) => {
           const horizon = getForwardHorizon(point.horizonMonths);
-          showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b>Ø Min/Max-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</b>`, x(point.signal), y(point.returnValue), true);
-          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.dateLabel} · ${horizon.label} Ø Min/Max-Return ${point.returnValue.toFixed(1).replace(".", ",")} % · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}`;
+          showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue), true);
+          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.dateLabel} · ${horizon.label} ${point.returnLabel}-Return ${point.returnValue.toFixed(1).replace(".", ",")} % · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}`;
         })
         .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
 
@@ -1975,10 +1986,10 @@
           .attr("fill", "#0f172a").attr("font-size", 10).attr("font-weight", 700).text(`Aktuell ${point.ticker}`);
         root.append("line").attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
           .attr("stroke", "transparent").attr("stroke-width", 18).style("cursor", "pointer")
-          .on("pointerenter", () => showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>1M/3M/6M/12M/24M-Returns: noch unbekannt`, currentX, 12 + index * 10))
+          .on("pointerenter", () => showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${selectedHorizon.label} Min/Max-Returns: noch unbekannt`, currentX, 12 + index * 10))
           .on("click", () => {
-            showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>1M/3M/6M/12M/24M-Returns: noch unbekannt`, currentX, 12 + index * 10, true);
-            summary.textContent = `Aktuell ${point.ticker} · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · Ø Min/Max-Forward Returns noch unbekannt`;
+            showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${selectedHorizon.label} Min/Max-Returns: noch unbekannt`, currentX, 12 + index * 10, true);
+            summary.textContent = `Aktuell ${point.ticker} · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · ${selectedHorizon.label} Min/Max-Forward Returns noch unbekannt`;
           })
           .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
       });
@@ -1998,8 +2009,9 @@
       const momentumWeight = readMomentumWeight();
       const trainingYears = readTrainingYears();
       const useLogPrice = getViewMode() === "log-return";
-      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
-      const horizons = getVisibleForwardHorizons().filter((horizon) => AUTO_FIT_HORIZONS.has(horizon.months));
+      const selectedHorizon = getVisibleForwardHorizons()[0];
+      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+      const horizons = AUTO_FIT_HORIZONS.has(selectedHorizon.months) ? [selectedHorizon] : [];
       if (!selectedTickers.size) {
         summary.textContent = "Keine Reihe ausgewählt.";
         showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
@@ -2008,19 +2020,20 @@
         return;
       }
       if (!horizons.length) {
-        summary.textContent = "12M oder 24M in der Legende aktivieren.";
-        showAnalysisEmpty(container, "Für den Backtest 12M oder 24M aktivieren.");
-        inSampleSummary.textContent = "12M oder 24M in der Legende aktivieren.";
-        showAnalysisEmpty(inSampleContainer, "Für das Training 12M oder 24M aktivieren.");
+        summary.textContent = "Für Backtest-Modelle 12M oder 24M als Horizont wählen.";
+        showAnalysisEmpty(container, "Für den Backtest 12M oder 24M wählen.");
+        inSampleSummary.textContent = "Für Training-Modelle 12M oder 24M als Horizont wählen.";
+        showAnalysisEmpty(inSampleContainer, "Für das Training 12M oder 24M wählen.");
         return;
       }
 
-      const visibleForwardHorizons = getVisibleForwardHorizons();
-      const allPoints = visibleForwardHorizons.flatMap((horizon) =>
+      const visibleForwardHorizons = [selectedHorizon];
+      const basePoints = visibleForwardHorizons.flatMap((horizon) =>
         [...selectedTickers].flatMap((ticker) =>
           calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice, momentumWeight)
         )
       );
+      const allPoints = expandForwardReturnTypes(basePoints);
       const split = calculateFixedTrainTestSplit(allPoints, trainingYears, "signal");
       if (!split) {
         summary.textContent = "Für dieses Trainingsfenster gibt es zu wenig Out-of-Sample-Daten.";
@@ -2038,36 +2051,37 @@
         titleId: "in-sample-title",
         lookbackMonths,
         momentumWeight,
-        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`,
+        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`,
         visibleForwardHorizons,
         pointsOverride: split.training,
+        pointsAlreadyExpanded: true,
         automaticFitsOverride: split.models,
         summaryPrefix: `${trainingStartLabel} bis ${cutoffLabel} · ${trainingYears} Jahre · ohne lineares Modell`,
         showCurrentReferences: false,
         highlightLatest: false
       });
 
-      const results = horizons.map((horizon) => {
-        const predictions = split.predictions.filter((point) => point.horizonMonths === horizon.months);
+      const results = FORWARD_RETURN_SERIES.map((series) => {
+        const predictions = split.predictions.filter((point) => point.returnType === series.key);
         const metrics = calculatePredictionMetrics(predictions);
         const actualMean = predictions.reduce((sum, point) => sum + point.actual, 0) / predictions.length;
         const predictedMean = predictions.reduce((sum, point) => sum + point.predicted, 0) / predictions.length;
-        return { horizon, predictions, metrics, actualMean, predictedMean, model: split.models.get(horizon.months) };
+        return { series, predictions, metrics, actualMean, predictedMean, model: split.models.get(series.key) };
       }).filter((entry) => entry.predictions.length && entry.model);
       const outOfSampleStart = d3.min(split.predictions, (point) => point.time);
       const outOfSampleEnd = d3.max(split.predictions, (point) => point.time);
       const outOfSampleStartLabel = formatDate(outOfSampleStart);
       const outOfSampleEndLabel = formatDate(outOfSampleEnd);
-      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
 
       const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
-      summary.textContent = results.map(({ horizon, metrics, actualMean, predictedMean, model }) =>
-        `${horizon.label}: ${model.name} · OOS R² ${metric(metrics.r2)} · RMSE ${metric(metrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`
+      summary.textContent = results.map(({ series, metrics, actualMean, predictedMean, model }) =>
+        `${selectedHorizon.label} ${series.label}: ${model.name} · OOS R² ${metric(metrics.r2)} · RMSE ${metric(metrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`
       ).join(" | ");
       container.setAttribute("aria-label", `Out-of-Sample-Vergleich nach festem In-Sample-Training von ${trainingStartLabel} bis ${cutoffLabel}. ${summary.textContent}`);
 
-      const predictions = results.flatMap(({ horizon, predictions: horizonPredictions }) =>
-        horizonPredictions.map((point) => ({ ...point, color: horizon.color }))
+      const predictions = results.flatMap(({ series, predictions: seriesPredictions }) =>
+        seriesPredictions.map((point) => ({ ...point, color: series.color }))
       );
       const values = predictions.flatMap((point) => [point.actual, point.predicted]).filter(Number.isFinite);
       const extent = d3.extent(values);
@@ -2092,23 +2106,17 @@
       root.append("g").call(d3.axisLeft(y).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 42).attr("text-anchor", "middle")
-        .attr("fill", "#334155").attr("font-size", 10).text("Tatsächlicher Ø Min/Max-Return");
+        .attr("fill", "#334155").attr("font-size", 10).text("Tatsächlicher Min/Max-Return");
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
-        .attr("fill", "#334155").attr("font-size", 10).text("Prognostizierter Ø Min/Max-Return");
+        .attr("fill", "#334155").attr("font-size", 10).text("Prognostizierter Min/Max-Return");
 
       const legend = root.append("g").attr("transform", "translate(0,-18)");
       legend.append("text").attr("x", 0).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(`OOS ab ${cutoffLabel}`);
-      results.forEach(({ horizon }, index) => {
+      results.forEach(({ series }, index) => {
         const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - results.length * 40) + index * 40},0)`)
-          .attr("role", "button").attr("tabindex", 0).style("cursor", "pointer")
-          .on("click", () => toggleForwardHorizon(horizon.months))
-          .on("keydown", (event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            toggleForwardHorizon(horizon.months);
-          });
-        item.append("circle").attr("r", 4).attr("fill", horizon.color);
-        item.append("text").attr("x", 7).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(horizon.label);
+          .attr("aria-label", `${series.label}-Return`);
+        item.append("circle").attr("r", 4).attr("fill", series.color);
+        item.append("text").attr("x", 7).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(series.label);
       });
 
       const maxMarks = 1800;
@@ -2127,7 +2135,7 @@
       container.appendChild(tooltip);
       let pinned = false;
       const showTooltip = (point, pin = false) => {
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Tatsächlich: ${point.actual.toFixed(1).replace(".", ",")} %<br>Prognose: ${point.predicted.toFixed(1).replace(".", ",")} %<br>Modell aus In-Sample: ${point.modelName}`;
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} ${point.returnLabel} · Out-of-Sample<br>Tatsächlich: ${point.actual.toFixed(1).replace(".", ",")} %<br>Prognose: ${point.predicted.toFixed(1).replace(".", ",")} %<br>Modell aus In-Sample: ${point.modelName}`;
         tooltip.style.display = "block";
         tooltip.style.left = `${Math.min(width - 220, Math.max(8, margin.left + x(point.actual) + 10))}px`;
         tooltip.style.top = `${Math.min(height - 110, Math.max(8, margin.top + y(point.predicted) - 35))}px`;
@@ -2941,6 +2949,7 @@
       document.getElementById("signal-lookback").addEventListener("change", renderChart);
       document.getElementById("signal-alpha").addEventListener("change", renderChart);
       document.getElementById("training-years").addEventListener("change", renderChart);
+      document.getElementById("forward-horizon").addEventListener("change", renderChart);
 
       document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
         radio.addEventListener("change", handleModeChange);
