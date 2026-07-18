@@ -888,7 +888,7 @@
 
     function renderForwardReturnTypeLegend(root, innerWidth, includeMidpoint = false) {
       const legendItems = includeMidpoint
-        ? [...FORWARD_RETURN_SERIES, { key: "mid", label: "Mitte", color: "#111827" }]
+        ? [...FORWARD_RETURN_SERIES, { key: "mean", label: "Regression", color: "#111827" }]
         : FORWARD_RETURN_SERIES;
       const slotWidth = Math.min(90, innerWidth / legendItems.length);
       const startX = Math.max(0, innerWidth - slotWidth * legendItems.length);
@@ -1396,19 +1396,10 @@
       const outOfSamplePoints = timed.filter((point) => point._modelTime > cutoffTime);
       if (training.length < 40 || outOfSamplePoints.length < 10) return null;
 
-      const visibleReturnTypes = [...new Set(timed.map((point) => point.returnType))]
-        .filter(Boolean);
-      const models = new Map(visibleReturnTypes.map((returnType) => [
-        returnType,
-        selectBestRegressionModel(
-          training.filter((point) => point.returnType === returnType),
-          xKey,
-          MODEL_TYPES
-        )
-      ]));
+      const meanModel = selectBestRegressionModel(training, xKey, MODEL_TYPES);
+      const models = new Map([["mean", meanModel]]);
       const predictions = outOfSamplePoints.map((point) => {
-        const model = models.get(point.returnType);
-        if (!model) return null;
+        if (!meanModel) return null;
         const series = getForwardReturnSeries(point.returnType);
         return {
           ticker: point.ticker,
@@ -1424,8 +1415,8 @@
           returnColor: point.returnColor || series.color,
           signal: point[xKey],
           actual: point.returnValue,
-          predicted: model.predict(point[xKey]),
-          modelName: model.name
+          predicted: meanModel.predict(point[xKey]),
+          modelName: meanModel.name
         };
       }).filter((point) => point && Number.isFinite(point.predicted));
       if (!predictions.length) return null;
@@ -1479,11 +1470,7 @@
     function getAutomaticFits(points, xKey, visibleHorizons, modelTypes) {
       const horizon = visibleHorizons[0];
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) return new Map();
-      return new Map(FORWARD_RETURN_SERIES
-        .map((series) => [
-          series.key,
-          selectBestRegressionModel(points.filter((point) => point.returnType === series.key), xKey, modelTypes)
-        ]));
+      return new Map([["mean", selectBestRegressionModel(points, xKey, modelTypes)]]);
     }
 
     function describeAutomaticFits(fits, visibleHorizons) {
@@ -1491,14 +1478,10 @@
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
         return "Modellwahl aus linear, logarithmisch und invers ist für 12M und 24M verfügbar.";
       }
-      const descriptions = FORWARD_RETURN_SERIES
-        .map((series) => {
-          const model = fits.get(series.key);
-          if (!model) return `${series.label}: zu wenig Daten`;
-          const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
-          return `${horizon.label} ${series.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
-        });
-      return descriptions.length ? `Modellwahl linear/log/invers · ${descriptions.join(" | ")}` : "Modellwahl aus linear, logarithmisch und invers ist für 12M und 24M verfügbar.";
+      const model = fits.get("mean");
+      if (!model) return "Mean-Regression: zu wenig Daten.";
+      const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
+      return `Mean-Regression · ${horizon.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
     }
 
     function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
@@ -1682,19 +1665,16 @@
       });
 
       if (AUTO_FIT_HORIZONS.has(selectedHorizon.months)) {
-        FORWARD_RETURN_SERIES.forEach((series) => {
-          const seriesPoints = points.filter((point) => point.returnType === series.key);
-          renderAutomaticFitCurve(
-            root,
-            automaticFits.get(series.key),
-            series,
-            xScale,
-            yScale,
-            d3.extent(seriesPoints, (point) => point.analysisPrice)
-          );
-        });
+        renderAutomaticFitCurve(
+          root,
+          automaticFits.get("mean"),
+          { color: "#111827" },
+          xScale,
+          yScale,
+          d3.extent(points, (point) => point.analysisPrice)
+        );
       }
-      renderForwardReturnTypeLegend(root, innerWidth);
+      renderForwardReturnTypeLegend(root, innerWidth, AUTO_FIT_HORIZONS.has(selectedHorizon.months));
       currentReferences.forEach((point, index) => {
         const currentX = xScale(point.analysisPrice);
         root.append("line")
@@ -1807,20 +1787,10 @@
         .attr("class", "signal-point").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 3)
         .attr("fill", (point) => point.returnColor).attr("fill-opacity", 0.5);
       if (AUTO_FIT_HORIZONS.has(selectedHorizon.months)) {
-        FORWARD_RETURN_SERIES.forEach((series) => {
-          const seriesPoints = points.filter((point) => point.returnType === series.key);
-          renderAutomaticFitCurve(
-            root,
-            automaticFits.get(series.key),
-            series,
-            x,
-            y,
-            d3.extent(seriesPoints, (point) => point.signal)
-          );
-        });
-        renderMidpointFitCurve(
+        renderAutomaticFitCurve(
           root,
-          automaticFits,
+          automaticFits.get("mean"),
+          { color: "#111827" },
           x,
           y,
           d3.extent(points, (point) => point.signal)
@@ -1917,13 +1887,7 @@
         xValueLabel: useLogPrice ? "ln(Preis)" : "Preis"
       });
 
-      const results = FORWARD_RETURN_SERIES.map((series) => {
-        const predictions = split.predictions.filter((point) => point.returnType === series.key);
-        const metrics = calculatePredictionMetrics(predictions);
-        const actualMean = predictions.reduce((sum, point) => sum + point.actual, 0) / predictions.length;
-        const predictedMean = predictions.reduce((sum, point) => sum + point.predicted, 0) / predictions.length;
-        return { series, predictions, metrics, actualMean, predictedMean, model: split.models.get(series.key) };
-      }).filter((entry) => entry.predictions.length && entry.model);
+      const meanModel = split.models.get("mean");
       const outOfSampleStart = d3.min(split.predictions, (point) => point.time);
       const outOfSampleEnd = d3.max(split.predictions, (point) => point.time);
       const outOfSampleStartLabel = formatDate(outOfSampleStart);
@@ -1964,8 +1928,8 @@
       const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
       const actualMean = average(timeSeries.map((point) => point.actualReturn));
       const predictedMean = average(timeSeries.map((point) => point.predictedMidpoint));
-      const modelText = results.map(({ series, model }) => `${series.label}: ${model.name}`).join(" · ");
-      summary.textContent = `Mean-Prognose aus Min/Max-Modell · ${modelText} · OOS R² ${metric(meanMetrics.r2)} · RMSE ${metric(meanMetrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`;
+      const modelText = meanModel ? `${meanModel.name} · ${meanModel.equation}` : "kein Modell";
+      summary.textContent = `Mean-Prognose · ${modelText} · OOS R² ${metric(meanMetrics.r2)} · RMSE ${metric(meanMetrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`;
       container.setAttribute("aria-label", `Out-of-Sample-Vergleich der Mean-Prognose nach festem In-Sample-Training von ${trainingStartLabel} bis ${cutoffLabel}. ${summary.textContent}`);
       const timeExtent = d3.extent(timeSeries, (point) => new Date(point.time * 1000));
       const returnValues = timeSeries.flatMap((point) => [
