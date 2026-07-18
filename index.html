@@ -728,7 +728,7 @@
                   Jahre
                 </label>
               </div>
-              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; automatische Modellwahl.</p>
+              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; lineare Regression.</p>
             </div>
             <div id="in-sample-chart" class="analysis-chart" role="img" aria-label="In-Sample-Streudiagramm aus historischem Preis und Forward Returns"></div>
           </section>
@@ -840,7 +840,7 @@
       { months: 24, label: "24M" }
     ];
     const AUTO_FIT_HORIZONS = new Set([12, 24]);
-    const MODEL_TYPES = ["linear", "logarithmic", "exponential", "power", "quadratic", "cubic", "quartic"];
+    const MODEL_TYPES = ["linear"];
     const FORWARD_RETURN_SERIES = [
       { key: "min", label: "Min", color: "#dc2626", valueKey: "minReturn", dateKey: "minDate", priceKey: "minPrice" },
       { key: "max", label: "Max", color: "#16a34a", valueKey: "maxReturn", dateKey: "maxDate", priceKey: "maxPrice" }
@@ -1479,7 +1479,7 @@
     function describeAutomaticFits(fits, visibleHorizons) {
       const horizon = visibleHorizons[0];
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
-        return "Automatische Modellwahl ist für 12M und 24M verfügbar.";
+        return "Lineare Regression ist für 12M und 24M verfügbar.";
       }
       const descriptions = FORWARD_RETURN_SERIES
         .map((series) => {
@@ -1488,7 +1488,7 @@
           const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
           return `${horizon.label} ${series.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
         });
-      return descriptions.length ? `Automatische Modellwahl · ${descriptions.join(" | ")}` : "Automatische Modellwahl ist für 12M und 24M verfügbar.";
+      return descriptions.length ? `Lineare Regression · ${descriptions.join(" | ")}` : "Lineare Regression ist für 12M und 24M verfügbar.";
     }
 
     function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
@@ -1927,18 +1927,38 @@
         return;
       }
       pairedPredictions.sort((a, b) => a.time - b.time || a.ticker.localeCompare(b.ticker));
-      const meanMetrics = calculatePredictionMetrics(pairedPredictions.map((point) => ({
+      const average = (values) => {
+        const clean = values.filter(Number.isFinite);
+        return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : NaN;
+      };
+      const timeSeries = [...d3.group(pairedPredictions, (point) => point.time).entries()]
+        .map(([time, pointsAtTime]) => ({
+          time: Number(time),
+          dateLabel: formatDate(Number(time)),
+          horizonMonths: selectedHorizon.months,
+          count: pointsAtTime.length,
+          predictedMidpoint: average(pointsAtTime.map((point) => point.predictedMidpoint)),
+          actualReturn: average(pointsAtTime.map((point) => point.actualReturn))
+        }))
+        .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.predictedMidpoint) && Number.isFinite(point.actualReturn))
+        .sort((a, b) => a.time - b.time);
+      if (timeSeries.length < 2) {
+        summary.textContent = "Für die OOS-Zeitreihe gibt es zu wenig Datenpunkte.";
+        showAnalysisEmpty(container, "Zu wenig OOS-Datenpunkte für eine Zeitreihe.");
+        return;
+      }
+      const meanMetrics = calculatePredictionMetrics(timeSeries.map((point) => ({
         actual: point.actualReturn,
         predicted: point.predictedMidpoint
       })));
       const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
-      const actualMean = pairedPredictions.reduce((sum, point) => sum + point.actualReturn, 0) / pairedPredictions.length;
-      const predictedMean = pairedPredictions.reduce((sum, point) => sum + point.predictedMidpoint, 0) / pairedPredictions.length;
+      const actualMean = average(timeSeries.map((point) => point.actualReturn));
+      const predictedMean = average(timeSeries.map((point) => point.predictedMidpoint));
       const modelText = results.map(({ series, model }) => `${series.label}: ${model.name}`).join(" · ");
       summary.textContent = `Mean-Prognose aus Min/Max-Modell · ${modelText} · OOS R² ${metric(meanMetrics.r2)} · RMSE ${metric(meanMetrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`;
       container.setAttribute("aria-label", `Out-of-Sample-Vergleich der Mean-Prognose nach festem In-Sample-Training von ${trainingStartLabel} bis ${cutoffLabel}. ${summary.textContent}`);
-      const timeExtent = d3.extent(pairedPredictions, (point) => new Date(point.time * 1000));
-      const returnValues = pairedPredictions.flatMap((point) => [
+      const timeExtent = d3.extent(timeSeries, (point) => new Date(point.time * 1000));
+      const returnValues = timeSeries.flatMap((point) => [
         point.predictedMidpoint,
         point.actualReturn
       ]).filter(Number.isFinite);
@@ -1975,18 +1995,19 @@
       const legend = root.append("g").attr("transform", "translate(0,-18)");
       legend.append("text").attr("x", 0).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(`OOS ab ${cutoffLabel}`);
       [
-        { label: "Prognose Mean", color: "#111827" },
-        { label: "Tatsächlich Mean", color: "#64748b" }
+        { label: "Prognose Mean", color: "#111827", dash: "" },
+        { label: "Tatsächlich Mean", color: "#64748b", dash: "4 4" }
       ].forEach((series, index) => {
         const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 210) + index * 102},0)`);
-        item.append("circle").attr("r", 4).attr("fill", series.color);
-        item.append("text").attr("x", 7).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(series.label);
+        item.append("line")
+          .attr("x1", 0).attr("x2", 15).attr("y1", 0).attr("y2", 0)
+          .attr("stroke", series.color).attr("stroke-width", 2.2).attr("stroke-dasharray", series.dash);
+        item.append("text").attr("x", 20).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(series.label);
       });
 
-      const maxMarks = 1800;
-      const sampleStep = Math.max(1, Math.ceil(pairedPredictions.length / maxMarks));
-      const sampled = pairedPredictions.filter((_, index) => index % sampleStep === 0);
-      const groupedPredictions = d3.group(pairedPredictions, (point) => point.ticker);
+      const maxMarks = 900;
+      const sampleStep = Math.max(1, Math.ceil(timeSeries.length / maxMarks));
+      const sampled = timeSeries.filter((_, index) => index % sampleStep === 0);
       const predictedLine = d3.line()
         .defined((point) => Number.isFinite(point.predictedMidpoint))
         .x((point) => x(new Date(point.time * 1000)))
@@ -1996,24 +2017,21 @@
         .x((point) => x(new Date(point.time * 1000)))
         .y((point) => y(point.actualReturn));
       const lines = root.append("g");
-      groupedPredictions.forEach((tickerPoints) => {
-        const sorted = [...tickerPoints].sort((a, b) => a.time - b.time);
-        lines.append("path")
-          .datum(sorted)
-          .attr("fill", "none")
-          .attr("stroke", "#64748b")
-          .attr("stroke-width", 1.8)
-          .attr("stroke-dasharray", "4 4")
-          .attr("d", actualLine);
-        lines.append("path")
-          .datum(sorted)
-          .attr("fill", "none")
-          .attr("stroke", "#111827")
-          .attr("stroke-width", 2.2)
-          .attr("stroke-linecap", "round")
-          .attr("stroke-linejoin", "round")
-          .attr("d", predictedLine);
-      });
+      lines.append("path")
+        .datum(timeSeries)
+        .attr("fill", "none")
+        .attr("stroke", "#64748b")
+        .attr("stroke-width", 1.8)
+        .attr("stroke-dasharray", "4 4")
+        .attr("d", actualLine);
+      lines.append("path")
+        .datum(timeSeries)
+        .attr("fill", "none")
+        .attr("stroke", "#111827")
+        .attr("stroke-width", 2.2)
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .attr("d", predictedLine);
       const marks = root.append("g");
       marks.selectAll("circle.backtest-predicted-point").data(sampled).join("circle")
         .attr("class", "backtest-predicted-point")
@@ -2026,7 +2044,7 @@
       container.appendChild(tooltip);
       let pinned = false;
       const showTooltip = (point, pin = false) => {
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognose Mean: ${point.predictedMidpoint.toFixed(1).replace(".", ",")} %<br>Tatsächlich Mean: ${point.actualReturn.toFixed(1).replace(".", ",")} %<br>Tatsächlich Min/Max: ${point.minActual.toFixed(1).replace(".", ",")} % / ${point.maxActual.toFixed(1).replace(".", ",")} %`;
+        tooltip.innerHTML = `<b>${point.dateLabel}</b><br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample · ${point.count} Reihe${point.count === 1 ? "" : "n"}<br>Prognose Mean: ${point.predictedMidpoint.toFixed(1).replace(".", ",")} %<br>Tatsächlich Mean: ${point.actualReturn.toFixed(1).replace(".", ",")} %`;
         tooltip.style.display = "block";
         tooltip.style.left = `${Math.min(width - 240, Math.max(8, margin.left + x(new Date(point.time * 1000)) + 10))}px`;
         tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + y(point.predictedMidpoint) - 35))}px`;
