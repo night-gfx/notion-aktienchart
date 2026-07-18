@@ -1217,7 +1217,7 @@
           ? 0.5
           : (absoluteMomentum - runningMinimum) / (runningMaximum - runningMinimum);
         const weightedMomentum = alpha * momentum01;
-        const signal = current.price + (weightedMomentum * current.price);
+        const signal = current.price * (1 - weightedMomentum);
         if (!Number.isFinite(signal)) return;
         points.push({
           ticker,
@@ -2026,7 +2026,7 @@
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 44).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10)
-        .text(`Preis + Einfluss ${formatMomentumWeight(momentumWeight)} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum 0..1 · Preis`);
+        .text(`Preis · (1 − Einfluss ${formatMomentumWeight(momentumWeight)} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum 0..1)`);
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10).text("Min/Max-Forward Return");
 
