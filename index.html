@@ -1515,7 +1515,7 @@
           if (!pair.min || !pair.max) return null;
           const predictedMidpoint = (pair.min.predicted + pair.max.predicted) / 2;
           if (!Number.isFinite(predictedMidpoint)) return null;
-          const actualReturn = pair.min.futureReturn;
+          const actualReturn = (pair.min.actual + pair.max.actual) / 2;
           if (!Number.isFinite(actualReturn)) return null;
           return {
             ...pair,
@@ -2211,7 +2211,7 @@
         { label: "Prognose-Band", color: "#94a3b8" },
         { label: "Prognose Max", color: "#16a34a" },
         { label: "Prognose Min", color: "#dc2626" },
-        { label: "Ist-Forward", color: "#111827" }
+        { label: "Ist-Mitte", color: "#111827" }
       ].forEach((series, index) => {
         const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 260) + index * 70},0)`);
         item.append("circle").attr("r", 4).attr("fill", series.color);
@@ -2283,7 +2283,7 @@
       container.appendChild(tooltip);
       let pinned = false;
       const showTooltip = (point, pin = false) => {
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognoseband: ${point.minPredicted.toFixed(1).replace(".", ",")} % bis ${point.maxPredicted.toFixed(1).replace(".", ",")} %<br>Tatsächliche Rendite: ${point.actualReturn.toFixed(1).replace(".", ",")} %<br>Tatsächlich Min/Max: ${point.minActual.toFixed(1).replace(".", ",")} % / ${point.maxActual.toFixed(1).replace(".", ",")} %`;
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognoseband: ${point.minPredicted.toFixed(1).replace(".", ",")} % bis ${point.maxPredicted.toFixed(1).replace(".", ",")} %<br>Tatsächliche Mitte: ${point.actualReturn.toFixed(1).replace(".", ",")} %<br>Tatsächlich Min/Max: ${point.minActual.toFixed(1).replace(".", ",")} % / ${point.maxActual.toFixed(1).replace(".", ",")} %`;
         tooltip.style.display = "block";
         tooltip.style.left = `${Math.min(width - 240, Math.max(8, margin.left + x(new Date(point.time * 1000)) + 10))}px`;
         tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + y(point.actualReturn) - 35))}px`;
