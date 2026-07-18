@@ -248,7 +248,7 @@
     .primary-charts {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-rows: auto minmax(240px, 1fr) auto minmax(240px, 1fr) auto minmax(240px, 1fr);
+      grid-template-rows: auto minmax(240px, 1fr) auto minmax(240px, 1fr);
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
@@ -620,7 +620,7 @@
     @media (max-width: 1000px) {
       .primary-charts {
         grid-template-columns: 1fr;
-        grid-template-rows: auto repeat(2, minmax(260px, auto)) auto repeat(2, minmax(260px, auto)) auto repeat(2, minmax(260px, auto));
+        grid-template-rows: auto repeat(2, minmax(260px, auto)) auto repeat(2, minmax(260px, auto));
         overflow-y: auto;
       }
       .chart-shell,
@@ -717,37 +717,6 @@
             </div>
           </aside>
 
-          <h2 class="chart-section-title">Indikator</h2>
-          <section class="analysis-panel" aria-labelledby="signal-title">
-            <div class="analysis-header">
-              <div class="forward-heading-row">
-                <h2 id="signal-title" class="forward-title">60T-Indikator · Einfluss 100%</h2>
-                <div class="indicator-controls">
-                  <label class="control-label" for="signal-lookback">
-                    Rückblick:
-                    <input id="signal-lookback" type="number" min="5" max="730" step="1" value="60" inputmode="numeric">
-                    Tage
-                  </label>
-                  <label class="control-label" for="signal-alpha">
-                    Einfluss:
-                    <input id="signal-alpha" type="number" min="0" max="100" step="5" value="100" inputmode="decimal" aria-label="Momentum-Einfluss in Prozent">
-                    %
-                  </label>
-                </div>
-              </div>
-              <p id="signal-summary" class="forward-summary">Durchgezogen: Indikator · gestrichelt: aktueller Preis · Maus oder Klick wählt einen Zeitpunkt.</p>
-            </div>
-            <div id="signal-chart" class="analysis-chart" role="img" aria-label="Additiver Indikator aus aktuellem Preis und skaliertem Momentum"></div>
-          </section>
-
-          <section class="analysis-panel" aria-labelledby="signal-forward-title">
-            <div class="analysis-header">
-              <h2 id="signal-forward-title" class="forward-title">60T-Indikator (Einfluss 100%) vs. Min/Max-Forward Return</h2>
-              <p id="signal-forward-summary" class="forward-summary">Min und Max werden als getrennte Modelle gerechnet.</p>
-            </div>
-            <div id="signal-forward-chart" class="analysis-chart" role="img" aria-label="Streudiagramm aus Momentum-Indikator und Min-/Max-Forward Returns für den gewählten Horizont"></div>
-          </section>
-
           <h2 class="chart-section-title">Backtest</h2>
           <section class="analysis-panel" aria-labelledby="in-sample-title">
             <div class="analysis-header">
@@ -759,9 +728,9 @@
                   Jahre
                 </label>
               </div>
-              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; lineare Regression.</p>
+              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; automatische Modellwahl.</p>
             </div>
-            <div id="in-sample-chart" class="analysis-chart" role="img" aria-label="In-Sample-Streudiagramm aus Momentum-Indikator und Forward Returns"></div>
+            <div id="in-sample-chart" class="analysis-chart" role="img" aria-label="In-Sample-Streudiagramm aus historischem Preis und Forward Returns"></div>
           </section>
 
           <section class="analysis-panel" aria-labelledby="backtest-title">
@@ -871,7 +840,7 @@
       { months: 24, label: "24M" }
     ];
     const AUTO_FIT_HORIZONS = new Set([12, 24]);
-    const LINEAR_MODEL_TYPES = ["linear"];
+    const MODEL_TYPES = ["linear", "logarithmic", "exponential", "power", "quadratic", "cubic", "quartic"];
     const FORWARD_RETURN_SERIES = [
       { key: "min", label: "Min", color: "#dc2626", valueKey: "minReturn", dateKey: "minDate", priceKey: "minPrice" },
       { key: "max", label: "Max", color: "#16a34a", valueKey: "maxReturn", dateKey: "maxDate", priceKey: "maxPrice" }
@@ -1190,92 +1159,6 @@
       return points;
     }
 
-    function calculateSignalPoints(entry, ticker, lookbackMonths, useLogPrice = false, momentumWeight = 1) {
-      entry.signalPointsByLookback ||= {};
-      const alpha = Math.max(0, Math.min(1, Number(momentumWeight)));
-      const cacheKey = `${lookbackMonths}-${alpha}-${useLogPrice ? "log" : "normal"}`;
-      if (entry.signalPointsByLookback[cacheKey]) {
-        return entry.signalPointsByLookback[cacheKey];
-      }
-      const weekly = getWeeklyPoints(entry);
-      const lookbackSeconds = lookbackMonths * 24 * 60 * 60;
-      const points = [];
-      let pastIndex = 0;
-      let runningMinimum = Infinity;
-      let runningMaximum = -Infinity;
-      weekly.forEach((current, index) => {
-        const targetTime = current.time - lookbackSeconds;
-        while (pastIndex + 1 < index && weekly[pastIndex + 1].time <= targetTime) pastIndex++;
-        const past = weekly[pastIndex];
-        if (!past || past.time > targetTime) return;
-        const analysisPrice = useLogPrice ? Math.log(current.price) : current.price;
-        const pastAnalysisPrice = useLogPrice ? Math.log(past.price) : past.price;
-        const absoluteMomentum = analysisPrice - pastAnalysisPrice;
-        runningMinimum = Math.min(runningMinimum, absoluteMomentum);
-        runningMaximum = Math.max(runningMaximum, absoluteMomentum);
-        const momentum01 = runningMaximum === runningMinimum
-          ? 0.5
-          : (absoluteMomentum - runningMinimum) / (runningMaximum - runningMinimum);
-        const weightedMomentum = alpha * momentum01;
-        const signal = current.price * (1 - weightedMomentum);
-        if (!Number.isFinite(signal)) return;
-        points.push({
-          ticker,
-          date: current.date,
-          dateLabel: current.dateLabel,
-          time: current.time,
-          price: current.price,
-          analysisPrice,
-          momentum: absoluteMomentum,
-          momentum01,
-          momentumWeight: alpha,
-          weightedMomentum,
-          signal
-        });
-      });
-      entry.signalPointsByLookback[cacheKey] = points;
-      return points;
-    }
-
-    function calculateSignalForwardPoints(entry, ticker, lookbackMonths, horizonMonths, useLogPrice = false, momentumWeight = 1) {
-      entry.signalForwardPoints ||= {};
-      const alpha = Math.max(0, Math.min(1, Number(momentumWeight)));
-      const cacheKey = `${lookbackMonths}-${horizonMonths}-${alpha}-${useLogPrice ? "log" : "normal"}`;
-      if (entry.signalForwardPoints[cacheKey]) return entry.signalForwardPoints[cacheKey];
-      const signalByTime = new Map(
-        calculateSignalPoints(entry, ticker, lookbackMonths, useLogPrice, alpha).map((point) => [point.time, point])
-      );
-      const points = [];
-      calculateForwardReturnPoints(entry, ticker, horizonMonths, useLogPrice).forEach((forwardPoint) => {
-        const signalPoint = signalByTime.get(forwardPoint.time);
-        if (!signalPoint) return;
-        points.push({
-          ticker,
-          dateLabel: forwardPoint.date,
-          time: forwardPoint.time,
-          signal: signalPoint.signal,
-          price: signalPoint.price,
-          analysisPrice: signalPoint.analysisPrice,
-          momentum: signalPoint.momentum,
-          momentum01: signalPoint.momentum01,
-          momentumWeight: signalPoint.momentumWeight,
-          weightedMomentum: signalPoint.weightedMomentum,
-          futureDate: forwardPoint.futureDate,
-          futurePrice: forwardPoint.futurePrice,
-          futureReturn: forwardPoint.futureReturn,
-          minDate: forwardPoint.minDate,
-          minPrice: forwardPoint.minPrice,
-          minReturn: forwardPoint.minReturn,
-          maxDate: forwardPoint.maxDate,
-          maxPrice: forwardPoint.maxPrice,
-          maxReturn: forwardPoint.maxReturn,
-          horizonMonths
-        });
-      });
-      entry.signalForwardPoints[cacheKey] = points;
-      return points;
-    }
-
     function solveNormalEquation(rows, values) {
       if (!rows.length || rows.length !== values.length) return null;
       const size = rows[0].length;
@@ -1305,6 +1188,39 @@
     function formatModelNumber(value) {
       if (!Number.isFinite(value)) return "–";
       return value.toLocaleString("de-DE", { maximumSignificantDigits: 4 });
+    }
+
+    function median(values) {
+      const clean = values.filter(Number.isFinite).sort((a, b) => a - b);
+      if (!clean.length) return NaN;
+      const middle = Math.floor(clean.length / 2);
+      return clean.length % 2 ? clean[middle] : (clean[middle - 1] + clean[middle]) / 2;
+    }
+
+    function robustScale(values, center) {
+      const deviations = values.map((value) => Math.abs(value - center)).filter(Number.isFinite);
+      const mad = median(deviations);
+      if (Number.isFinite(mad) && mad > 0) return mad * 1.4826;
+      const clean = values.filter(Number.isFinite).sort((a, b) => a - b);
+      if (clean.length < 2) return NaN;
+      const span = clean[clean.length - 1] - clean[0];
+      return span > 0 ? span / 4 : NaN;
+    }
+
+    function filterRobustRegressionPoints(points, xKey) {
+      if (points.length < 80) return points;
+      const clean = points.filter((point) => Number.isFinite(point[xKey]) && Number.isFinite(point.returnValue));
+      const xCenter = median(clean.map((point) => point[xKey]));
+      const yCenter = median(clean.map((point) => point.returnValue));
+      const xScale = robustScale(clean.map((point) => point[xKey]), xCenter);
+      const yScale = robustScale(clean.map((point) => point.returnValue), yCenter);
+      if (!Number.isFinite(xScale) || !Number.isFinite(yScale) || xScale <= 0 || yScale <= 0) return clean;
+      const threshold = 4.5;
+      const filtered = clean.filter((point) =>
+        Math.abs((point[xKey] - xCenter) / xScale) <= threshold &&
+        Math.abs((point.returnValue - yCenter) / yScale) <= threshold
+      );
+      return filtered.length >= Math.max(40, clean.length * 0.65) ? filtered : clean;
     }
 
     function signedModelTerm(value, suffix) {
@@ -1398,11 +1314,13 @@
       return { type, name, complexity, predict, equation };
     }
 
-    function selectBestRegressionModel(points, xKey, modelTypes = LINEAR_MODEL_TYPES) {
-      const timed = points
+    function selectBestRegressionModel(points, xKey, modelTypes = MODEL_TYPES) {
+      let timed = points
         .map((point) => ({ ...point, _modelTime: Number.isFinite(point.time) ? point.time : parseTimestamp(point.date || point.dateLabel) }))
         .filter((point) => Number.isFinite(point._modelTime) && Number.isFinite(point[xKey]) && Number.isFinite(point.returnValue))
         .sort((a, b) => a._modelTime - b._modelTime);
+      if (timed.length < 40) return null;
+      timed = filterRobustRegressionPoints(timed, xKey);
       if (timed.length < 40) return null;
       const uniqueTimes = [...new Set(timed.map((point) => point._modelTime))];
       const cutoff = uniqueTimes[Math.max(0, Math.floor(uniqueTimes.length * 0.75) - 1)];
@@ -1475,7 +1393,7 @@
         selectBestRegressionModel(
           training.filter((point) => point.returnType === returnType),
           xKey,
-          LINEAR_MODEL_TYPES
+          MODEL_TYPES
         )
       ]));
       const predictions = outOfSamplePoints.map((point) => {
@@ -1561,7 +1479,7 @@
     function describeAutomaticFits(fits, visibleHorizons) {
       const horizon = visibleHorizons[0];
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
-        return "Lineare Regression ist für 12M und 24M verfügbar.";
+        return "Automatische Modellwahl ist für 12M und 24M verfügbar.";
       }
       const descriptions = FORWARD_RETURN_SERIES
         .map((series) => {
@@ -1570,7 +1488,7 @@
           const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
           return `${horizon.label} ${series.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
         });
-      return descriptions.length ? `Lineare Regression · ${descriptions.join(" | ")}` : "Lineare Regression ist für 12M und 24M verfügbar.";
+      return descriptions.length ? `Automatische Modellwahl · ${descriptions.join(" | ")}` : "Automatische Modellwahl ist für 12M und 24M verfügbar.";
     }
 
     function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
@@ -1793,32 +1711,12 @@
       });
     }
 
-    function readMonthInput(id) {
-      const input = document.getElementById(id);
-      const parsed = Number(String(input?.value ?? "60").replace(",", "."));
-      const value = Math.max(5, Math.min(730, Math.round(Number.isFinite(parsed) ? parsed : 60)));
-      if (input) input.value = String(value);
-      return value;
-    }
-
-    function readMomentumWeight() {
-      const input = document.getElementById("signal-alpha");
-      const parsed = Number(String(input?.value ?? "100").replace(",", "."));
-      const percent = Math.max(0, Math.min(100, Math.round(Number.isFinite(parsed) ? parsed : 100)));
-      if (input) input.value = String(percent);
-      return percent / 100;
-    }
-
     function readTrainingYears() {
       const input = document.getElementById("training-years");
       const parsed = Number(String(input?.value ?? "10").replace(",", "."));
       const value = Math.max(3, Math.min(24, Math.round(Number.isFinite(parsed) ? parsed : 10)));
       if (input) input.value = String(value);
       return value;
-    }
-
-    function formatMomentumWeight(value) {
-      return `${(value * 100).toLocaleString("de-DE", { maximumFractionDigits: 0 })}%`;
     }
 
     function showAnalysisEmpty(container, text) {
@@ -1829,150 +1727,17 @@
       container.appendChild(empty);
     }
 
-    function renderSignalChart(selectedTickers, timeRange) {
-      const container = document.getElementById("signal-chart");
-      const summary = document.getElementById("signal-summary");
-      if (!container || !summary || !dataset || !window.d3) return;
-      const lookbackMonths = readMonthInput("signal-lookback");
-      const momentumWeight = readMomentumWeight();
-      const useLogPrice = getViewMode() === "log-return";
-      const entries = [...selectedTickers].map((ticker) => ({
-        ticker,
-        color: getColor(ticker),
-        points: calculateSignalPoints(dataset[ticker], ticker, lookbackMonths, useLogPrice, momentumWeight)
-          .filter((point) => point.time >= timeRange[0] && point.time <= timeRange[1])
-      })).filter((entry) => entry.points.length);
-      document.getElementById("signal-title").textContent = useLogPrice
-        ? `${lookbackMonths}T-Log-Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`
-        : `${lookbackMonths}T-Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`;
-      container.setAttribute("aria-label", useLogPrice
-        ? `Zeitreihe des ${lookbackMonths}-Tage-Log-Momentum-Indikators mit Momentum-Einfluss ${formatMomentumWeight(momentumWeight)} und des natürlichen Logarithmus des Preises`
-        : `Zeitreihe des ${lookbackMonths}-Tage-Momentum-Indikators mit Momentum-Einfluss ${formatMomentumWeight(momentumWeight)} und des aktuellen Preises`);
-      if (!entries.length) {
-        summary.textContent = selectedTickers.size ? "Für diesen Zeitraum sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
-        showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
-        return;
-      }
-
-      const latestText = entries.map((entry) => {
-        const point = entry.points.at(-1);
-        return `${entry.ticker}: Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)}`;
-      }).join(" · ");
-      summary.textContent = `Aktuell · ${latestText} · Durchgezogen: Indikator · gestrichelt: ${useLogPrice ? "ln(Preis)" : "Preis"}`;
-      container.replaceChildren();
-      const width = Math.max(280, container.clientWidth);
-      const height = Math.max(180, container.clientHeight);
-      const margin = { top: 18, right: 64, bottom: 38, left: 62 };
-      const innerWidth = width - margin.left - margin.right;
-      const innerHeight = height - margin.top - margin.bottom;
-      const allPoints = entries.flatMap((entry) => entry.points);
-      const x = d3.scaleTime().domain(d3.extent(allPoints, (point) => point.date)).range([0, innerWidth]);
-      const signalExtent = d3.extent(allPoints, (point) => point.signal);
-      const signalSpan = Math.max((signalExtent[1] || 0) - (signalExtent[0] || 0), Math.abs(signalExtent[1] || 1) * 0.05, 1e-9);
-      const y = d3.scaleLinear().domain([
-        Math.min(0, (signalExtent[0] || 0) - signalSpan * 0.08),
-        Math.max(0, (signalExtent[1] || 0) + signalSpan * 0.08)
-      ]).nice().range([innerHeight, 0]);
-      const priceExtent = d3.extent(allPoints, (point) => point.analysisPrice);
-      const priceSpan = Math.max((priceExtent[1] || 0) - (priceExtent[0] || 0), Math.abs(priceExtent[0] || 1) * 0.05, 1e-9);
-      const priceY = d3.scaleLinear()
-        .domain([(priceExtent[0] || 0) - priceSpan * 0.08, (priceExtent[1] || 1) + priceSpan * 0.08])
-        .nice()
-        .range([innerHeight, 0]);
-      const svg = d3.select(container).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("aria-hidden", "true");
-      const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-      root.append("g").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""))
-        .call((group) => group.select(".domain").remove())
-        .call((group) => group.selectAll("line").attr("stroke", "#e2e8f0"));
-      root.append("g").attr("transform", `translate(0,${innerHeight})`)
-        .call(d3.axisBottom(x).ticks(Math.max(3, Math.floor(innerWidth / 100))))
-        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 9));
-      root.append("g").call(d3.axisLeft(y).ticks(5).tickFormat((value) => value.toLocaleString("de-DE", { maximumSignificantDigits: 3 })))
-        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 9));
-      root.append("g").attr("transform", `translate(${innerWidth},0)`)
-        .call(d3.axisRight(priceY).ticks(5).tickSizeOuter(0).tickPadding(6).tickFormat((value) => value.toLocaleString("de-DE", { maximumSignificantDigits: 4 })))
-        .call((group) => group.select(".domain").attr("stroke", "#94a3b8"))
-        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
-      root.append("text").attr("x", 0).attr("y", -6).attr("fill", "#334155").attr("font-size", 10).text("Indikator");
-      root.append("text").attr("x", innerWidth).attr("y", -6).attr("text-anchor", "end").attr("fill", "#334155").attr("font-size", 10).text(useLogPrice ? "ln(Preis)" : "Preis");
-      const line = d3.line().x((point) => x(point.date)).y((point) => y(point.signal));
-      const priceLine = d3.line().x((point) => x(point.date)).y((point) => priceY(point.analysisPrice));
-      entries.forEach((entry) => {
-        root.append("path").datum(entry.points).attr("d", priceLine).attr("fill", "none")
-          .attr("stroke", entry.color).attr("stroke-opacity", 0.48).attr("stroke-width", 1.4).attr("stroke-dasharray", "5 4");
-        root.append("path").datum(entry.points).attr("d", line).attr("fill", "none")
-          .attr("stroke", entry.color).attr("stroke-width", 2);
-        const current = entry.points.at(-1);
-        root.append("circle").attr("cx", x(current.date)).attr("cy", y(current.signal)).attr("r", 4)
-          .attr("fill", entry.color).attr("stroke", "#ffffff").attr("stroke-width", 1.5);
-        root.append("circle").attr("cx", x(current.date)).attr("cy", priceY(current.analysisPrice)).attr("r", 3.5)
-          .attr("fill", "#ffffff").attr("stroke", entry.color).attr("stroke-width", 1.5);
-      });
-
-      const tooltip = document.createElement("div");
-      tooltip.className = "chart-tooltip";
-      container.appendChild(tooltip);
-      const focus = root.append("line").attr("y1", 0).attr("y2", innerHeight)
-        .attr("stroke", "#475569").attr("stroke-width", 1).attr("stroke-dasharray", "3 3").style("display", "none");
-      const bisect = d3.bisector((point) => point.date).center;
-      let pinned = false;
-      const inspect = (event, pin = false) => {
-        const [pointerX] = d3.pointer(event, event.currentTarget);
-        const targetDate = x.invert(Math.max(0, Math.min(innerWidth, pointerX)));
-        const selected = entries.map((entry) => {
-          const index = bisect(entry.points, targetDate);
-          return { entry, point: entry.points[Math.max(0, Math.min(index, entry.points.length - 1))] };
-        }).filter(({ point }) => point);
-        if (!selected.length) return;
-        const selectedDate = selected[0].point.date;
-        focus.attr("x1", x(selectedDate)).attr("x2", x(selectedDate)).style("display", null);
-        tooltip.innerHTML = `<strong>${d3.timeFormat("%d.%m.%Y")(selectedDate)}</strong><br>${selected.map(({ entry, point }) => `<span style="color:${entry.color}">●</span> ${entry.ticker}: Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)}`).join("<br>")}`;
-        tooltip.style.display = "block";
-        tooltip.style.left = `${Math.min(width - 270, Math.max(8, margin.left + x(selectedDate) + 12))}px`;
-        tooltip.style.top = `${Math.max(8, margin.top + 6)}px`;
-        if (pin) {
-          pinned = true;
-          summary.textContent = `Ausgewählt: ${d3.timeFormat("%d.%m.%Y")(selectedDate)} · ${selected.map(({ entry, point }) => `${entry.ticker}: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}, ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")}, ` : ""}Preis ${formatActualPrice(point.price)}`).join(" · ")}`;
-        }
-      };
-      root.append("rect").attr("width", innerWidth).attr("height", innerHeight).attr("fill", "transparent")
-        .style("cursor", "crosshair").style("touch-action", "pan-y")
-        .on("pointermove", (event) => inspect(event))
-        .on("click", (event) => inspect(event, true))
-        .on("pointerleave", () => {
-          if (pinned) return;
-          focus.style("display", "none");
-          tooltip.style.display = "none";
-        });
-    }
-
-    function renderSignalForwardChart(selectedTickers) {
-      const lookbackMonths = readMonthInput("signal-lookback");
-      const momentumWeight = readMomentumWeight();
-      renderIndicatorForwardChart(selectedTickers, {
-        containerId: "signal-forward-chart",
-        summaryId: "signal-forward-summary",
-        titleId: "signal-forward-title",
-        lookbackMonths,
-        momentumWeight
-      });
-    }
-
-    function renderIndicatorForwardChart(selectedTickers, config) {
+    function renderPriceTrainingChart(selectedTickers, config) {
       const container = document.getElementById(config.containerId);
       const summary = document.getElementById(config.summaryId);
       const title = document.getElementById(config.titleId);
       if (!container || !summary || !title || !dataset || !window.d3) return;
-      const { lookbackMonths, momentumWeight } = config;
       const useLogPrice = getViewMode() === "log-return";
       const visibleForwardHorizons = config.visibleForwardHorizons || getVisibleForwardHorizons();
       const selectedHorizon = visibleForwardHorizons[0] || getVisibleForwardHorizons()[0];
-      title.textContent = config.titleText || `${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator (Einfluss ${formatMomentumWeight(momentumWeight)}) vs. Min/Max-Forward Return (${selectedHorizon.label})`;
-      const basePoints = config.pointsOverride || visibleForwardHorizons.flatMap((horizon) =>
-        [...selectedTickers].flatMap((ticker) =>
-          calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice, momentumWeight)
-        )
-      );
+      const xValueLabel = config.xValueLabel || (useLogPrice ? "ln(Preis)" : "Preis");
+      title.textContent = config.titleText || `${xValueLabel} vs. Min/Max-Forward Return (${selectedHorizon.label})`;
+      const basePoints = config.pointsOverride || [];
       const points = config.pointsAlreadyExpanded ? basePoints : expandForwardReturnTypes(basePoints);
       if (!points.length) {
         summary.textContent = selectedTickers.size ? "Für diese Kombination sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
@@ -1986,21 +1751,18 @@
       summary.textContent = displayedSummary;
       container.setAttribute(
         "aria-label",
-        `Streudiagramm aus ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Einfluss ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
+        `Streudiagramm aus ${xValueLabel} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
       );
       const maxRenderedPoints = 2500;
       const sampled = sampleForwardReturnPoints(points, Math.ceil(maxRenderedPoints / FORWARD_RETURN_SERIES.length));
-      const currentReferences = config.showCurrentReferences === false ? [] : [...selectedTickers].map((ticker) => {
-        const point = calculateSignalPoints(dataset[ticker], ticker, lookbackMonths, useLogPrice, momentumWeight).at(-1);
-        return point || null;
-      }).filter(Boolean);
+      const currentReferences = [];
       container.replaceChildren();
       const width = Math.max(280, container.clientWidth);
       const height = Math.max(180, container.clientHeight);
       const margin = { top: 24, right: 20, bottom: 54, left: 64 };
       const innerWidth = width - margin.left - margin.right;
       const innerHeight = height - margin.top - margin.bottom;
-      const xValues = [...points.map((point) => point.signal), ...currentReferences.map((point) => point.signal)];
+      const xValues = points.map((point) => point.signal);
       const xExtent = d3.extent(xValues);
       const yExtent = d3.extent(points, (point) => point.returnValue);
       const xSpan = Math.max((xExtent[1] || 0) - (xExtent[0] || 0), Math.abs(xExtent[1] || 1) * 0.05, 1e-9);
@@ -2026,7 +1788,7 @@
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 44).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10)
-        .text(`Preis · (1 − Einfluss ${formatMomentumWeight(momentumWeight)} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum 0..1)`);
+        .text(config.xAxisText || xValueLabel);
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10).text("Min/Max-Forward Return");
 
@@ -2070,29 +1832,14 @@
       marks.selectAll("circle.signal-hit").data(sampled).join("circle")
         .attr("class", "signal-hit").attr("cx", (point) => x(point.signal)).attr("cy", (point) => y(point.returnValue)).attr("r", 10)
         .attr("fill", "transparent").style("cursor", "pointer")
-        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % · Max ${point.maxReturn.toFixed(1).replace(".", ",")} %<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue)))
+        .on("pointerenter", (_, point) => showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>${xValueLabel}: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${getForwardHorizon(point.horizonMonths).label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % · Max ${point.maxReturn.toFixed(1).replace(".", ",")} %<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue)))
         .on("click", (_, point) => {
           const horizon = getForwardHorizon(point.horizonMonths);
-          showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue), true);
-          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.dateLabel} · ${horizon.label} ${point.returnLabel}-Return ${point.returnValue.toFixed(1).replace(".", ",")} % · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}`;
+          showTooltip(`<b>${point.ticker}</b> · ${point.dateLabel}<br>${xValueLabel}: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis damals: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${horizon.label}: Min ${point.minReturn.toFixed(1).replace(".", ",")} % (${point.minDate}) · Max ${point.maxReturn.toFixed(1).replace(".", ",")} % (${point.maxDate})<br><b><span style="color:${point.returnColor}">${point.returnLabel}-Return: ${point.returnValue.toFixed(1).replace(".", ",")} %</span></b>`, x(point.signal), y(point.returnValue), true);
+          summary.textContent = `Ausgewählt: ${point.ticker} · ${point.dateLabel} · ${horizon.label} ${point.returnLabel}-Return ${point.returnValue.toFixed(1).replace(".", ",")} % · ${xValueLabel} ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}`;
         })
         .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
 
-      currentReferences.forEach((point, index) => {
-        const currentX = x(point.signal);
-        root.append("line").attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
-          .attr("stroke", "#0f172a").attr("stroke-width", 1.5).attr("stroke-dasharray", "3 3");
-        root.append("text").attr("x", Math.min(innerWidth - 2, currentX + 3)).attr("y", 10 + (index % 2) * 12)
-          .attr("fill", "#0f172a").attr("font-size", 10).attr("font-weight", 700).text(`Aktuell ${point.ticker}`);
-        root.append("line").attr("x1", currentX).attr("x2", currentX).attr("y1", 0).attr("y2", innerHeight)
-          .attr("stroke", "transparent").attr("stroke-width", 18).style("cursor", "pointer")
-          .on("pointerenter", () => showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${selectedHorizon.label} Min/Max-Returns: noch unbekannt`, currentX, 12 + index * 10))
-          .on("click", () => {
-            showTooltip(`<b>Aktuell ${point.ticker}</b><br>${point.dateLabel}<br>Indikator: ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })}<br>Preis: ${formatActualPrice(point.price)}${useLogPrice ? `<br>ln(Preis): ${point.analysisPrice.toFixed(4).replace(".", ",")}` : ""}<br>${selectedHorizon.label} Min/Max-Returns: noch unbekannt`, currentX, 12 + index * 10, true);
-            summary.textContent = `Aktuell ${point.ticker} · Indikator ${point.signal.toLocaleString("de-DE", { maximumSignificantDigits: 4 })} · ${useLogPrice ? `ln(Preis) ${point.analysisPrice.toFixed(4).replace(".", ",")} · ` : ""}Preis ${formatActualPrice(point.price)} · ${selectedHorizon.label} Min/Max-Forward Returns noch unbekannt`;
-          })
-          .on("pointerleave", () => { if (!pinned) tooltip.style.display = "none"; });
-      });
     }
 
     function renderFixedTrainTestBacktest(selectedTickers) {
@@ -2105,12 +1852,10 @@
       container.replaceChildren();
       inSampleContainer.replaceChildren();
 
-      const lookbackMonths = readMonthInput("signal-lookback");
-      const momentumWeight = readMomentumWeight();
       const trainingYears = readTrainingYears();
       const useLogPrice = getViewMode() === "log-return";
       const selectedHorizon = getVisibleForwardHorizons()[0];
-      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`;
+      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${useLogPrice ? "ln(Preis)" : "Preis"}`;
       const horizons = AUTO_FIT_HORIZONS.has(selectedHorizon.months) ? [selectedHorizon] : [];
       if (!selectedTickers.size) {
         summary.textContent = "Keine Reihe ausgewählt.";
@@ -2130,11 +1875,11 @@
       const visibleForwardHorizons = [selectedHorizon];
       const basePoints = visibleForwardHorizons.flatMap((horizon) =>
         [...selectedTickers].flatMap((ticker) =>
-          calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice, momentumWeight)
+          calculateForwardReturnPoints(dataset[ticker], ticker, horizon.months, useLogPrice)
         )
       );
       const allPoints = expandForwardReturnTypes(basePoints);
-      const split = calculateFixedTrainTestSplit(allPoints, trainingYears, "signal");
+      const split = calculateFixedTrainTestSplit(allPoints, trainingYears, "analysisPrice");
       if (!split) {
         summary.textContent = "Für dieses Trainingsfenster gibt es zu wenig Out-of-Sample-Daten.";
         showAnalysisEmpty(container, "Trainingsjahre verkürzen oder eine längere Historie wählen.");
@@ -2145,19 +1890,21 @@
 
       const trainingStartLabel = formatDate(split.trainingStart);
       const cutoffLabel = formatDate(split.cutoffTime);
-      renderIndicatorForwardChart(selectedTickers, {
+      renderPriceTrainingChart(selectedTickers, {
         containerId: "in-sample-chart",
         summaryId: "in-sample-summary",
         titleId: "in-sample-title",
-        lookbackMonths,
-        momentumWeight,
-        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`,
+        lookbackMonths: null,
+        momentumWeight: null,
+        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${useLogPrice ? "ln(Preis)" : "Preis"}`,
         visibleForwardHorizons,
-        pointsOverride: split.training,
+        pointsOverride: split.training.map((point) => ({ ...point, signal: point.analysisPrice })),
         pointsAlreadyExpanded: true,
         automaticFitsOverride: split.models,
         summaryPrefix: `${trainingStartLabel} bis ${cutoffLabel} · ${trainingYears} Jahre`,
-        showCurrentReferences: false
+        showCurrentReferences: false,
+        xAxisText: useLogPrice ? "ln(historischer Preis)" : "Historischer Preis",
+        xValueLabel: useLogPrice ? "ln(Preis)" : "Preis"
       });
 
       const results = FORWARD_RETURN_SERIES.map((series) => {
@@ -2171,13 +1918,7 @@
       const outOfSampleEnd = d3.max(split.predictions, (point) => point.time);
       const outOfSampleStartLabel = formatDate(outOfSampleStart);
       const outOfSampleEndLabel = formatDate(outOfSampleEnd);
-      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`;
-
-      const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
-      summary.textContent = results.map(({ series, metrics, actualMean, predictedMean, model }) =>
-        `${selectedHorizon.label} ${series.label}: ${model.name} · OOS R² ${metric(metrics.r2)} · RMSE ${metric(metrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`
-      ).join(" | ");
-      container.setAttribute("aria-label", `Out-of-Sample-Vergleich nach festem In-Sample-Training von ${trainingStartLabel} bis ${cutoffLabel}. ${summary.textContent}`);
+      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${useLogPrice ? "ln(Preis)" : "Preis"}`;
 
       const pairedPredictions = pairOutOfSamplePredictions(split.predictions);
       if (!pairedPredictions.length) {
@@ -2186,10 +1927,19 @@
         return;
       }
       pairedPredictions.sort((a, b) => a.time - b.time || a.ticker.localeCompare(b.ticker));
+      const meanMetrics = calculatePredictionMetrics(pairedPredictions.map((point) => ({
+        actual: point.actualReturn,
+        predicted: point.predictedMidpoint
+      })));
+      const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
+      const actualMean = pairedPredictions.reduce((sum, point) => sum + point.actualReturn, 0) / pairedPredictions.length;
+      const predictedMean = pairedPredictions.reduce((sum, point) => sum + point.predictedMidpoint, 0) / pairedPredictions.length;
+      const modelText = results.map(({ series, model }) => `${series.label}: ${model.name}`).join(" · ");
+      summary.textContent = `Mean-Prognose aus Min/Max-Modell · ${modelText} · OOS R² ${metric(meanMetrics.r2)} · RMSE ${metric(meanMetrics.rmse)} % · Mittel tatsächlich ${metric(actualMean)} %, Prognose ${metric(predictedMean)} %`;
+      container.setAttribute("aria-label", `Out-of-Sample-Vergleich der Mean-Prognose nach festem In-Sample-Training von ${trainingStartLabel} bis ${cutoffLabel}. ${summary.textContent}`);
       const timeExtent = d3.extent(pairedPredictions, (point) => new Date(point.time * 1000));
       const returnValues = pairedPredictions.flatMap((point) => [
-        point.minPredicted,
-        point.maxPredicted,
+        point.predictedMidpoint,
         point.actualReturn
       ]).filter(Number.isFinite);
       const returnExtent = d3.extent(returnValues);
@@ -2225,12 +1975,10 @@
       const legend = root.append("g").attr("transform", "translate(0,-18)");
       legend.append("text").attr("x", 0).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(`OOS ab ${cutoffLabel}`);
       [
-        { label: "Prognose-Band", color: "#94a3b8" },
-        { label: "Prognose Max", color: "#16a34a" },
-        { label: "Prognose Min", color: "#dc2626" },
-        { label: "Ist-Mitte", color: "#111827" }
+        { label: "Prognose Mean", color: "#111827" },
+        { label: "Tatsächlich Mean", color: "#64748b" }
       ].forEach((series, index) => {
-        const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 260) + index * 70},0)`);
+        const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 210) + index * 102},0)`);
         item.append("circle").attr("r", 4).attr("fill", series.color);
         item.append("text").attr("x", 7).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(series.label);
       });
@@ -2239,46 +1987,24 @@
       const sampleStep = Math.max(1, Math.ceil(pairedPredictions.length / maxMarks));
       const sampled = pairedPredictions.filter((_, index) => index % sampleStep === 0);
       const groupedPredictions = d3.group(pairedPredictions, (point) => point.ticker);
-      const bandArea = d3.area()
-        .defined((point) => Number.isFinite(point.minPredicted) && Number.isFinite(point.maxPredicted))
+      const predictedLine = d3.line()
+        .defined((point) => Number.isFinite(point.predictedMidpoint))
         .x((point) => x(new Date(point.time * 1000)))
-        .y0((point) => y(Math.min(point.minPredicted, point.maxPredicted)))
-        .y1((point) => y(Math.max(point.minPredicted, point.maxPredicted)));
-      const maxLine = d3.line()
-        .defined((point) => Number.isFinite(point.maxPredicted))
-        .x((point) => x(new Date(point.time * 1000)))
-        .y((point) => y(point.maxPredicted));
-      const minLine = d3.line()
-        .defined((point) => Number.isFinite(point.minPredicted))
-        .x((point) => x(new Date(point.time * 1000)))
-        .y((point) => y(point.minPredicted));
+        .y((point) => y(point.predictedMidpoint));
       const actualLine = d3.line()
         .defined((point) => Number.isFinite(point.actualReturn))
         .x((point) => x(new Date(point.time * 1000)))
         .y((point) => y(point.actualReturn));
-      const bands = root.append("g");
       const lines = root.append("g");
       groupedPredictions.forEach((tickerPoints) => {
         const sorted = [...tickerPoints].sort((a, b) => a.time - b.time);
-        bands.append("path")
-          .datum(sorted)
-          .attr("fill", "#94a3b8")
-          .attr("fill-opacity", 0.18)
-          .attr("d", bandArea);
         lines.append("path")
           .datum(sorted)
           .attr("fill", "none")
-          .attr("stroke", "#16a34a")
+          .attr("stroke", "#64748b")
           .attr("stroke-width", 1.8)
-          .attr("stroke-dasharray", "6 4")
-          .attr("d", maxLine);
-        lines.append("path")
-          .datum(sorted)
-          .attr("fill", "none")
-          .attr("stroke", "#dc2626")
-          .attr("stroke-width", 1.8)
-          .attr("stroke-dasharray", "6 4")
-          .attr("d", minLine);
+          .attr("stroke-dasharray", "4 4")
+          .attr("d", actualLine);
         lines.append("path")
           .datum(sorted)
           .attr("fill", "none")
@@ -2286,12 +2012,12 @@
           .attr("stroke-width", 2.2)
           .attr("stroke-linecap", "round")
           .attr("stroke-linejoin", "round")
-          .attr("d", actualLine);
+          .attr("d", predictedLine);
       });
       const marks = root.append("g");
-      marks.selectAll("circle.backtest-actual-point").data(sampled).join("circle")
-        .attr("class", "backtest-actual-point")
-        .attr("cx", (point) => x(new Date(point.time * 1000))).attr("cy", (point) => y(point.actualReturn)).attr("r", 2.7)
+      marks.selectAll("circle.backtest-predicted-point").data(sampled).join("circle")
+        .attr("class", "backtest-predicted-point")
+        .attr("cx", (point) => x(new Date(point.time * 1000))).attr("cy", (point) => y(point.predictedMidpoint)).attr("r", 2.7)
         .attr("fill", "#111827")
         .attr("fill-opacity", 0.7);
 
@@ -2300,14 +2026,14 @@
       container.appendChild(tooltip);
       let pinned = false;
       const showTooltip = (point, pin = false) => {
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognoseband: ${point.minPredicted.toFixed(1).replace(".", ",")} % bis ${point.maxPredicted.toFixed(1).replace(".", ",")} %<br>Tatsächliche Mitte: ${point.actualReturn.toFixed(1).replace(".", ",")} %<br>Tatsächlich Min/Max: ${point.minActual.toFixed(1).replace(".", ",")} % / ${point.maxActual.toFixed(1).replace(".", ",")} %`;
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognose Mean: ${point.predictedMidpoint.toFixed(1).replace(".", ",")} %<br>Tatsächlich Mean: ${point.actualReturn.toFixed(1).replace(".", ",")} %<br>Tatsächlich Min/Max: ${point.minActual.toFixed(1).replace(".", ",")} % / ${point.maxActual.toFixed(1).replace(".", ",")} %`;
         tooltip.style.display = "block";
         tooltip.style.left = `${Math.min(width - 240, Math.max(8, margin.left + x(new Date(point.time * 1000)) + 10))}px`;
-        tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + y(point.actualReturn) - 35))}px`;
+        tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + y(point.predictedMidpoint) - 35))}px`;
         if (pin) pinned = true;
       };
       marks.selectAll("circle.backtest-hit").data(sampled).join("circle")
-        .attr("class", "backtest-hit").attr("cx", (point) => x(new Date(point.time * 1000))).attr("cy", (point) => y(point.actualReturn)).attr("r", 9)
+        .attr("class", "backtest-hit").attr("cx", (point) => x(new Date(point.time * 1000))).attr("cy", (point) => y(point.predictedMidpoint)).attr("r", 9)
         .attr("fill", "transparent").style("cursor", "pointer")
         .on("pointerenter", (_, point) => showTooltip(point))
         .on("click", (_, point) => showTooltip(point, true))
@@ -2903,8 +2629,6 @@
         renderD3Chart(seriesEntries.filter((entry) => entry.visible && entry.chartData?.length));
 
         renderForwardReturnChart(selectedTickers);
-        renderSignalChart(selectedTickers, timeRange);
-        renderSignalForwardChart(selectedTickers);
         renderFixedTrainTestBacktest(selectedTickers);
         renderCommoditySidebar();
         updateAlarmButtons();
@@ -3111,10 +2835,6 @@
         btn.addEventListener("click", handlePeriodChange);
       });
 
-      document.getElementById("signal-lookback").addEventListener("change", renderChart);
-      document.getElementById("signal-lookback").addEventListener("input", renderChart);
-      document.getElementById("signal-alpha").addEventListener("change", renderChart);
-      document.getElementById("signal-alpha").addEventListener("input", renderChart);
       document.getElementById("training-years").addEventListener("change", renderChart);
       document.getElementById("training-years").addEventListener("input", renderChart);
       document.getElementById("forward-horizon").addEventListener("change", renderChart);
