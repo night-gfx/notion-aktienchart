@@ -721,7 +721,7 @@
           <section class="analysis-panel" aria-labelledby="signal-title">
             <div class="analysis-header">
               <div class="forward-heading-row">
-                <h2 id="signal-title" class="forward-title">60T-Indikator · α 1</h2>
+                <h2 id="signal-title" class="forward-title">60T-Indikator · Einfluss 100%</h2>
                 <div class="indicator-controls">
                   <label class="control-label" for="signal-lookback">
                     Rückblick:
@@ -729,19 +729,20 @@
                     Tage
                   </label>
                   <label class="control-label" for="signal-alpha">
-                    α:
-                    <input id="signal-alpha" type="number" min="0" max="1" step="0.05" value="1" inputmode="decimal" aria-label="Momentum-Gewicht Alpha">
+                    Einfluss:
+                    <input id="signal-alpha" type="number" min="0" max="100" step="5" value="100" inputmode="decimal" aria-label="Momentum-Einfluss in Prozent">
+                    %
                   </label>
                 </div>
               </div>
               <p id="signal-summary" class="forward-summary">Durchgezogen: Indikator · gestrichelt: aktueller Preis · Maus oder Klick wählt einen Zeitpunkt.</p>
             </div>
-            <div id="signal-chart" class="analysis-chart" role="img" aria-label="Preisgewichteter Indikator aus skaliertem Momentum und aktuellem Preis"></div>
+            <div id="signal-chart" class="analysis-chart" role="img" aria-label="Additiver Indikator aus aktuellem Preis und skaliertem Momentum"></div>
           </section>
 
           <section class="analysis-panel" aria-labelledby="signal-forward-title">
             <div class="analysis-header">
-              <h2 id="signal-forward-title" class="forward-title">60T-Indikator (α 1) vs. Min/Max-Forward Return</h2>
+              <h2 id="signal-forward-title" class="forward-title">60T-Indikator (Einfluss 100%) vs. Min/Max-Forward Return</h2>
               <p id="signal-forward-summary" class="forward-summary">Min und Max werden als getrennte Modelle gerechnet.</p>
             </div>
             <div id="signal-forward-chart" class="analysis-chart" role="img" aria-label="Streudiagramm aus Momentum-Indikator und Min-/Max-Forward Returns für den gewählten Horizont"></div>
@@ -1215,8 +1216,8 @@
         const momentum01 = runningMaximum === runningMinimum
           ? 0.5
           : (absoluteMomentum - runningMinimum) / (runningMaximum - runningMinimum);
-        const weightedMomentum = (momentum01 * alpha) + (1 - alpha);
-        const signal = current.price * weightedMomentum;
+        const weightedMomentum = alpha * momentum01;
+        const signal = current.price + weightedMomentum;
         if (!Number.isFinite(signal)) return;
         points.push({
           ticker,
@@ -1802,10 +1803,10 @@
 
     function readMomentumWeight() {
       const input = document.getElementById("signal-alpha");
-      const parsed = Number(String(input?.value ?? "1").replace(",", "."));
-      const value = Math.max(0, Math.min(1, Math.round((Number.isFinite(parsed) ? parsed : 1) * 20) / 20));
-      if (input) input.value = value.toFixed(2);
-      return value;
+      const parsed = Number(String(input?.value ?? "100").replace(",", "."));
+      const percent = Math.max(0, Math.min(100, Math.round(Number.isFinite(parsed) ? parsed : 100)));
+      if (input) input.value = String(percent);
+      return percent / 100;
     }
 
     function readTrainingYears() {
@@ -1817,7 +1818,7 @@
     }
 
     function formatMomentumWeight(value) {
-      return value.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      return `${(value * 100).toLocaleString("de-DE", { maximumFractionDigits: 0 })}%`;
     }
 
     function showAnalysisEmpty(container, text) {
@@ -1842,11 +1843,11 @@
           .filter((point) => point.time >= timeRange[0] && point.time <= timeRange[1])
       })).filter((entry) => entry.points.length);
       document.getElementById("signal-title").textContent = useLogPrice
-        ? `${lookbackMonths}T-Log-Indikator · α ${formatMomentumWeight(momentumWeight)}`
-        : `${lookbackMonths}T-Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+        ? `${lookbackMonths}T-Log-Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`
+        : `${lookbackMonths}T-Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`;
       container.setAttribute("aria-label", useLogPrice
-        ? `Zeitreihe des ${lookbackMonths}-Tage-Log-Momentum-Indikators mit Momentum-Gewicht ${formatMomentumWeight(momentumWeight)} und des natürlichen Logarithmus des Preises`
-        : `Zeitreihe des ${lookbackMonths}-Tage-Momentum-Indikators mit Momentum-Gewicht ${formatMomentumWeight(momentumWeight)} und des aktuellen Preises`);
+        ? `Zeitreihe des ${lookbackMonths}-Tage-Log-Momentum-Indikators mit Momentum-Einfluss ${formatMomentumWeight(momentumWeight)} und des natürlichen Logarithmus des Preises`
+        : `Zeitreihe des ${lookbackMonths}-Tage-Momentum-Indikators mit Momentum-Einfluss ${formatMomentumWeight(momentumWeight)} und des aktuellen Preises`);
       if (!entries.length) {
         summary.textContent = selectedTickers.size ? "Für diesen Zeitraum sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
         showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
@@ -1966,7 +1967,7 @@
       const useLogPrice = getViewMode() === "log-return";
       const visibleForwardHorizons = config.visibleForwardHorizons || getVisibleForwardHorizons();
       const selectedHorizon = visibleForwardHorizons[0] || getVisibleForwardHorizons()[0];
-      title.textContent = config.titleText || `${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator (α ${formatMomentumWeight(momentumWeight)}) vs. Min/Max-Forward Return (${selectedHorizon.label})`;
+      title.textContent = config.titleText || `${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator (Einfluss ${formatMomentumWeight(momentumWeight)}) vs. Min/Max-Forward Return (${selectedHorizon.label})`;
       const basePoints = config.pointsOverride || visibleForwardHorizons.flatMap((horizon) =>
         [...selectedTickers].flatMap((ticker) =>
           calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice, momentumWeight)
@@ -1985,7 +1986,7 @@
       summary.textContent = displayedSummary;
       container.setAttribute(
         "aria-label",
-        `Streudiagramm aus ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Gewicht ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
+        `Streudiagramm aus ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Einfluss ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
       );
       const maxRenderedPoints = 2500;
       const sampled = sampleForwardReturnPoints(points, Math.ceil(maxRenderedPoints / FORWARD_RETURN_SERIES.length));
@@ -2025,7 +2026,7 @@
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 44).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10)
-        .text(`Preis · ((1−α)+α·${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum 0..1) · α=${formatMomentumWeight(momentumWeight)}`);
+        .text(`Preis + Einfluss ${formatMomentumWeight(momentumWeight)} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum 0..1`);
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10).text("Min/Max-Forward Return");
 
@@ -2109,7 +2110,7 @@
       const trainingYears = readTrainingYears();
       const useLogPrice = getViewMode() === "log-return";
       const selectedHorizon = getVisibleForwardHorizons()[0];
-      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`;
       const horizons = AUTO_FIT_HORIZONS.has(selectedHorizon.months) ? [selectedHorizon] : [];
       if (!selectedTickers.size) {
         summary.textContent = "Keine Reihe ausgewählt.";
@@ -2150,7 +2151,7 @@
         titleId: "in-sample-title",
         lookbackMonths,
         momentumWeight,
-        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`,
+        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`,
         visibleForwardHorizons,
         pointsOverride: split.training,
         pointsAlreadyExpanded: true,
@@ -2170,7 +2171,7 @@
       const outOfSampleEnd = d3.max(split.predictions, (point) => point.time);
       const outOfSampleStartLabel = formatDate(outOfSampleStart);
       const outOfSampleEndLabel = formatDate(outOfSampleEnd);
-      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · Einfluss ${formatMomentumWeight(momentumWeight)}`;
 
       const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
       summary.textContent = results.map(({ series, metrics, actualMean, predictedMean, model }) =>
