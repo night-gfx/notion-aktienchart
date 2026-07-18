@@ -1402,7 +1402,7 @@
         const series = getForwardReturnSeries(point.returnType);
         return {
           ticker: point.ticker,
-          dateLabel: point.dateLabel,
+          dateLabel: point.dateLabel || point.date,
           futureDate: point.futureDate,
           futurePrice: point.futurePrice,
           futureReturn: point.futureReturn,
@@ -1431,7 +1431,7 @@
     function pairOutOfSamplePredictions(predictions) {
       const byObservation = new Map();
       predictions.forEach((point) => {
-        const key = `${point.ticker}|${point.dateLabel}|${point.horizonMonths}`;
+        const key = `${point.ticker}|${point.time}|${point.horizonMonths}`;
         if (!byObservation.has(key)) {
           byObservation.set(key, {
             ticker: point.ticker,
