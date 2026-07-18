@@ -1095,6 +1095,7 @@
       }
       const weekly = getWeeklyPoints(entry);
       const horizonSeconds = horizonMonths * (365.25 / 12) * 24 * 60 * 60;
+      const minimumHoldSeconds = Math.min(1, horizonMonths) * (365.25 / 12) * 24 * 60 * 60;
       const minimumWeeks = Math.ceil(horizonMonths * 4.35) + 2;
       if (weekly.length < minimumWeeks) {
         entry.forwardReturnPointsByHorizon[cacheKey] = [];
@@ -1104,10 +1105,12 @@
       const lastTime = weekly[weekly.length - 1].time;
       const points = [];
       let futureIndex = 1;
+      let minimumHoldIndex = 1;
 
       for (let index = 0; index < weekly.length; index++) {
         const current = weekly[index];
         const targetTime = current.time + horizonSeconds;
+        const minimumHoldTime = current.time + minimumHoldSeconds;
         if (targetTime > lastTime) break;
         futureIndex = Math.max(futureIndex, index + 1);
         while (futureIndex < weekly.length && weekly[futureIndex].time < targetTime) futureIndex++;
@@ -1121,9 +1124,12 @@
           selectedIndex = previousIndex;
         }
         const future = weekly[selectedIndex];
-        let minimum = weekly[index + 1];
-        let maximum = weekly[index + 1];
-        for (let futurePointIndex = index + 1; futurePointIndex <= selectedIndex; futurePointIndex++) {
+        minimumHoldIndex = Math.max(minimumHoldIndex, index + 1);
+        while (minimumHoldIndex < weekly.length && weekly[minimumHoldIndex].time < minimumHoldTime) minimumHoldIndex++;
+        const firstEvaluableIndex = Math.min(Math.max(minimumHoldIndex, index + 1), selectedIndex);
+        let minimum = weekly[firstEvaluableIndex];
+        let maximum = weekly[firstEvaluableIndex];
+        for (let futurePointIndex = firstEvaluableIndex; futurePointIndex <= selectedIndex; futurePointIndex++) {
           const candidate = weekly[futurePointIndex];
           if (candidate.price < minimum.price) minimum = candidate;
           if (candidate.price > maximum.price) maximum = candidate;
@@ -1503,9 +1509,11 @@
           if (!pair.min || !pair.max) return null;
           const predictedMidpoint = (pair.min.predicted + pair.max.predicted) / 2;
           if (!Number.isFinite(predictedMidpoint)) return null;
+          const actualReturn = ((pair.min.futurePrice / pair.min.price) - 1) * 100;
           return {
             ...pair,
             predictedMidpoint,
+            actualReturn,
             minActual: pair.min.actual,
             maxActual: pair.max.actual,
             minPredicted: pair.min.predicted,
@@ -2153,54 +2161,52 @@
         showAnalysisEmpty(container, "Zu wenig paarige Min/Max-Prognosen.");
         return;
       }
-      const xExtent = d3.extent(pairedPredictions, (point) => point.predictedMidpoint);
-      const xSpan = Math.max((xExtent[1] || 0) - (xExtent[0] || 0), 1);
-      const xDomain = [xExtent[0] - xSpan * 0.06, xExtent[1] + xSpan * 0.06];
-      const maxExtent = d3.extent(pairedPredictions, (point) => point.maxActual);
-      const minExtent = d3.extent(pairedPredictions, (point) => point.minActual);
-      const maxSpan = Math.max((maxExtent[1] || 0) - (maxExtent[0] || 0), 1);
-      const minSpan = Math.max((minExtent[1] || 0) - (minExtent[0] || 0), 1);
+      pairedPredictions.sort((a, b) => a.time - b.time || a.ticker.localeCompare(b.ticker));
+      const timeExtent = d3.extent(pairedPredictions, (point) => new Date(point.time * 1000));
+      const returnValues = pairedPredictions.flatMap((point) => [
+        point.minPredicted,
+        point.maxPredicted,
+        point.actualReturn
+      ]).filter(Number.isFinite);
+      const returnExtent = d3.extent(returnValues);
+      const returnSpan = Math.max((returnExtent[1] || 0) - (returnExtent[0] || 0), 1);
       const width = Math.max(280, container.clientWidth);
       const height = Math.max(180, container.clientHeight);
-      const margin = { top: 34, right: 62, bottom: 50, left: 62 };
+      const margin = { top: 34, right: 18, bottom: 50, left: 62 };
       const innerWidth = width - margin.left - margin.right;
       const innerHeight = height - margin.top - margin.bottom;
-      const x = d3.scaleLinear().domain(xDomain).nice().range([0, innerWidth]);
-      const yMax = d3.scaleLinear()
-        .domain([Math.min(0, (maxExtent[0] || 0) - maxSpan * 0.08), (maxExtent[1] || 0) + maxSpan * 0.08])
-        .nice().range([innerHeight, 0]);
-      const yMin = d3.scaleLinear()
-        .domain([(minExtent[0] || 0) - minSpan * 0.08, Math.max(0, (minExtent[1] || 0) + minSpan * 0.08)])
+      const x = d3.scaleTime().domain(timeExtent).nice().range([0, innerWidth]);
+      const y = d3.scaleLinear()
+        .domain([
+          Math.min(0, (returnExtent[0] || 0) - returnSpan * 0.08),
+          Math.max(0, (returnExtent[1] || 0) + returnSpan * 0.08)
+        ])
         .nice().range([innerHeight, 0]);
       const svg = d3.select(container).append("svg").attr("viewBox", `0 0 ${width} ${height}`).attr("aria-hidden", "true");
       const root = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-      root.append("g").call(d3.axisLeft(yMax).ticks(5).tickSize(-innerWidth).tickFormat(""))
+      root.append("g").call(d3.axisLeft(y).ticks(5).tickSize(-innerWidth).tickFormat(""))
         .call((group) => group.select(".domain").remove())
         .call((group) => group.selectAll("line").attr("stroke", "#d7dee8").attr("stroke-width", 0.75).attr("shape-rendering", "crispEdges"));
       root.append("g").attr("transform", `translate(0,${innerHeight})`)
-        .call(d3.axisBottom(x).ticks(width < 480 ? 3 : 5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
+        .call(d3.axisBottom(x).ticks(width < 480 ? 3 : 5).tickSizeOuter(0).tickPadding(7).tickFormat(d3.timeFormat("%Y")))
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
-      root.append("g").call(d3.axisLeft(yMax).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
-        .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
-      root.append("g").attr("transform", `translate(${innerWidth},0)`)
-        .call(d3.axisRight(yMin).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
+      root.append("g").call(d3.axisLeft(y).ticks(5).tickSizeOuter(0).tickPadding(7).tickFormat((value) => `${value.toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`))
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 42).attr("text-anchor", "middle")
-        .attr("fill", "#334155").attr("font-size", 10).text("Prognostizierter Mittelwert aus Min-/Max-Modell");
+        .attr("fill", "#334155").attr("font-size", 10).text("Datum");
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
-        .attr("fill", "#16a34a").attr("font-size", 10).text("Tatsächlicher Max-Return");
-      root.append("text").attr("transform", "rotate(90)").attr("x", innerHeight / 2).attr("y", -innerWidth - 48).attr("text-anchor", "middle")
-        .attr("fill", "#dc2626").attr("font-size", 10).text("Tatsächlicher Min-Return");
+        .attr("fill", "#334155").attr("font-size", 10).text("Forward Return");
 
       const legend = root.append("g").attr("transform", "translate(0,-18)");
       legend.append("text").attr("x", 0).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(`OOS ab ${cutoffLabel}`);
       [
-        { label: "Max", color: "#16a34a" },
-        { label: "Min", color: "#dc2626" },
-        { label: "Mitte-Prognose", color: "#111827" }
+        { label: "Prognose-Band", color: "#94a3b8" },
+        { label: "Prognose Max", color: "#16a34a" },
+        { label: "Prognose Min", color: "#dc2626" },
+        { label: "Tatsächlich", color: "#111827" }
       ].forEach((series, index) => {
-        const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 170) + index * 58},0)`);
+        const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 260) + index * 70},0)`);
         item.append("circle").attr("r", 4).attr("fill", series.color);
         item.append("text").attr("x", 7).attr("y", 3).attr("font-size", 9).attr("fill", "#475569").text(series.label);
       });
@@ -2208,38 +2214,74 @@
       const maxMarks = 1800;
       const sampleStep = Math.max(1, Math.ceil(pairedPredictions.length / maxMarks));
       const sampled = pairedPredictions.filter((_, index) => index % sampleStep === 0);
+      const groupedPredictions = d3.group(sampled, (point) => point.ticker);
+      const bandArea = d3.area()
+        .defined((point) => Number.isFinite(point.minPredicted) && Number.isFinite(point.maxPredicted))
+        .x((point) => x(new Date(point.time * 1000)))
+        .y0((point) => y(Math.min(point.minPredicted, point.maxPredicted)))
+        .y1((point) => y(Math.max(point.minPredicted, point.maxPredicted)));
+      const maxLine = d3.line()
+        .defined((point) => Number.isFinite(point.maxPredicted))
+        .x((point) => x(new Date(point.time * 1000)))
+        .y((point) => y(point.maxPredicted));
+      const minLine = d3.line()
+        .defined((point) => Number.isFinite(point.minPredicted))
+        .x((point) => x(new Date(point.time * 1000)))
+        .y((point) => y(point.minPredicted));
+      const actualLine = d3.line()
+        .defined((point) => Number.isFinite(point.actualReturn))
+        .x((point) => x(new Date(point.time * 1000)))
+        .y((point) => y(point.actualReturn));
+      const bands = root.append("g");
+      const lines = root.append("g");
+      groupedPredictions.forEach((tickerPoints) => {
+        const sorted = [...tickerPoints].sort((a, b) => a.time - b.time);
+        bands.append("path")
+          .datum(sorted)
+          .attr("fill", "#94a3b8")
+          .attr("fill-opacity", 0.18)
+          .attr("d", bandArea);
+        lines.append("path")
+          .datum(sorted)
+          .attr("fill", "none")
+          .attr("stroke", "#16a34a")
+          .attr("stroke-width", 1.8)
+          .attr("stroke-dasharray", "6 4")
+          .attr("d", maxLine);
+        lines.append("path")
+          .datum(sorted)
+          .attr("fill", "none")
+          .attr("stroke", "#dc2626")
+          .attr("stroke-width", 1.8)
+          .attr("stroke-dasharray", "6 4")
+          .attr("d", minLine);
+        lines.append("path")
+          .datum(sorted)
+          .attr("fill", "none")
+          .attr("stroke", "#111827")
+          .attr("stroke-width", 2.2)
+          .attr("d", actualLine);
+      });
       const marks = root.append("g");
-      marks.selectAll("line.backtest-midpoint-rug").data(sampled).join("line")
-        .attr("class", "backtest-midpoint-rug")
-        .attr("x1", (point) => x(point.predictedMidpoint)).attr("x2", (point) => x(point.predictedMidpoint))
-        .attr("y1", innerHeight - 7).attr("y2", innerHeight)
-        .attr("stroke", "#111827").attr("stroke-width", 1.2).attr("stroke-opacity", 0.55);
-      marks.selectAll("circle.backtest-max-point").data(sampled).join("circle")
-        .attr("class", "backtest-max-point")
-        .attr("cx", (point) => x(point.predictedMidpoint)).attr("cy", (point) => yMax(point.maxActual)).attr("r", 3.2)
-        .attr("fill", "#16a34a")
-        .attr("fill-opacity", 0.65)
-        .attr("stroke", "#16a34a").attr("stroke-width", 1.1);
-      marks.selectAll("circle.backtest-min-point").data(sampled).join("circle")
-        .attr("class", "backtest-min-point")
-        .attr("cx", (point) => x(point.predictedMidpoint)).attr("cy", (point) => yMin(point.minActual)).attr("r", 3.2)
-        .attr("fill", "#dc2626")
-        .attr("fill-opacity", 0.65)
-        .attr("stroke", "#dc2626").attr("stroke-width", 1.1);
+      marks.selectAll("circle.backtest-actual-point").data(sampled).join("circle")
+        .attr("class", "backtest-actual-point")
+        .attr("cx", (point) => x(new Date(point.time * 1000))).attr("cy", (point) => y(point.actualReturn)).attr("r", 2.7)
+        .attr("fill", "#111827")
+        .attr("fill-opacity", 0.7);
 
       const tooltip = document.createElement("div");
       tooltip.className = "chart-tooltip";
       container.appendChild(tooltip);
       let pinned = false;
       const showTooltip = (point, pin = false) => {
-        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognostizierter Mittelwert: ${point.predictedMidpoint.toFixed(1).replace(".", ",")} %<br>Max tatsächlich: ${point.maxActual.toFixed(1).replace(".", ",")} %<br>Min tatsächlich: ${point.minActual.toFixed(1).replace(".", ",")} %<br>Max-Prognose: ${point.maxPredicted.toFixed(1).replace(".", ",")} % · Min-Prognose: ${point.minPredicted.toFixed(1).replace(".", ",")} %`;
+        tooltip.innerHTML = `<b>${point.ticker}</b> · ${point.dateLabel}<br>${getForwardHorizon(point.horizonMonths).label} · Out-of-Sample<br>Prognoseband: ${point.minPredicted.toFixed(1).replace(".", ",")} % bis ${point.maxPredicted.toFixed(1).replace(".", ",")} %<br>Tatsächliche Rendite: ${point.actualReturn.toFixed(1).replace(".", ",")} %<br>Tatsächlich Min/Max: ${point.minActual.toFixed(1).replace(".", ",")} % / ${point.maxActual.toFixed(1).replace(".", ",")} %`;
         tooltip.style.display = "block";
-        tooltip.style.left = `${Math.min(width - 240, Math.max(8, margin.left + x(point.predictedMidpoint) + 10))}px`;
-        tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + yMax(point.maxActual) - 35))}px`;
+        tooltip.style.left = `${Math.min(width - 240, Math.max(8, margin.left + x(new Date(point.time * 1000)) + 10))}px`;
+        tooltip.style.top = `${Math.min(height - 120, Math.max(8, margin.top + y(point.actualReturn) - 35))}px`;
         if (pin) pinned = true;
       };
       marks.selectAll("circle.backtest-hit").data(sampled).join("circle")
-        .attr("class", "backtest-hit").attr("cx", (point) => x(point.predictedMidpoint)).attr("cy", (point) => yMax(point.maxActual)).attr("r", 9)
+        .attr("class", "backtest-hit").attr("cx", (point) => x(new Date(point.time * 1000))).attr("cy", (point) => y(point.actualReturn)).attr("r", 9)
         .attr("fill", "transparent").style("cursor", "pointer")
         .on("pointerenter", (_, point) => showTooltip(point))
         .on("click", (_, point) => showTooltip(point, true))
@@ -3044,8 +3086,11 @@
       });
 
       document.getElementById("signal-lookback").addEventListener("change", renderChart);
+      document.getElementById("signal-lookback").addEventListener("input", renderChart);
       document.getElementById("signal-alpha").addEventListener("change", renderChart);
+      document.getElementById("signal-alpha").addEventListener("input", renderChart);
       document.getElementById("training-years").addEventListener("change", renderChart);
+      document.getElementById("training-years").addEventListener("input", renderChart);
       document.getElementById("forward-horizon").addEventListener("change", renderChart);
 
       document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
