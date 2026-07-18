@@ -248,10 +248,23 @@
     .primary-charts {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-rows: repeat(3, minmax(240px, 1fr));
+      grid-template-rows: auto minmax(240px, 1fr) auto minmax(240px, 1fr) auto minmax(240px, 1fr);
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
+    }
+
+    .chart-section-title {
+      grid-column: 1 / -1;
+      margin: 0;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
     }
 
     .chart-shell {
@@ -274,8 +287,8 @@
       background: #ffffff;
     }
 
-    .analysis-panel:nth-child(3),
-    .analysis-panel:nth-child(5) {
+    .analysis-panel:nth-of-type(1),
+    .analysis-panel:nth-of-type(3) {
       border-right: 1px solid var(--border);
     }
 
@@ -607,7 +620,7 @@
     @media (max-width: 1000px) {
       .primary-charts {
         grid-template-columns: 1fr;
-        grid-template-rows: repeat(6, minmax(260px, auto));
+        grid-template-rows: auto repeat(2, minmax(260px, auto)) auto repeat(2, minmax(260px, auto)) auto repeat(2, minmax(260px, auto));
         overflow-y: auto;
       }
       .chart-shell,
@@ -669,6 +682,7 @@
 
       <section class="chart-container">
         <div class="primary-charts">
+          <h2 class="chart-section-title">Preis</h2>
           <div class="chart-shell" aria-labelledby="price-title">
             <div class="analysis-header">
               <h2 id="price-title" class="forward-title">Preis</h2>
@@ -677,7 +691,6 @@
               <div id="chart" role="img" aria-label="Zeitreihenvergleich der ausgewählten Rohstoffe">
                 <div id="chart-tooltip" class="chart-tooltip"></div>
               </div>
-              <div id="legend" class="legend"></div>
             </div>
           </div>
 
@@ -691,8 +704,8 @@
                     <option value="1">1M</option>
                     <option value="3">3M</option>
                     <option value="6">6M</option>
-                    <option value="12" selected>12M</option>
-                    <option value="24">24M</option>
+                    <option value="12">12M</option>
+                    <option value="24" selected>24M</option>
                   </select>
                 </label>
               </div>
@@ -704,15 +717,16 @@
             </div>
           </aside>
 
+          <h2 class="chart-section-title">Indikator</h2>
           <section class="analysis-panel" aria-labelledby="signal-title">
             <div class="analysis-header">
               <div class="forward-heading-row">
-                <h2 id="signal-title" class="forward-title">2M-Indikator · α 1</h2>
+                <h2 id="signal-title" class="forward-title">60T-Indikator · α 1</h2>
                 <div class="indicator-controls">
                   <label class="control-label" for="signal-lookback">
                     Rückblick:
-                    <input id="signal-lookback" type="number" min="0.2" max="24" step="0.2" value="2" inputmode="decimal">
-                    Monate
+                    <input id="signal-lookback" type="number" min="5" max="730" step="1" value="60" inputmode="numeric">
+                    Tage
                   </label>
                   <label class="control-label" for="signal-alpha">
                     α:
@@ -722,17 +736,18 @@
               </div>
               <p id="signal-summary" class="forward-summary">Durchgezogen: Indikator · gestrichelt: aktueller Preis · Maus oder Klick wählt einen Zeitpunkt.</p>
             </div>
-            <div id="signal-chart" class="analysis-chart" role="img" aria-label="Indikator aus skaliertem Momentum geteilt durch den aktuellen Preis"></div>
+            <div id="signal-chart" class="analysis-chart" role="img" aria-label="Preisgewichteter Indikator aus skaliertem Momentum und aktuellem Preis"></div>
           </section>
 
           <section class="analysis-panel" aria-labelledby="signal-forward-title">
             <div class="analysis-header">
-              <h2 id="signal-forward-title" class="forward-title">2M-Indikator (α 1) vs. Min/Max-Forward Return</h2>
+              <h2 id="signal-forward-title" class="forward-title">60T-Indikator (α 1) vs. Min/Max-Forward Return</h2>
               <p id="signal-forward-summary" class="forward-summary">Min und Max werden als getrennte Modelle gerechnet.</p>
             </div>
             <div id="signal-forward-chart" class="analysis-chart" role="img" aria-label="Streudiagramm aus Momentum-Indikator und Min-/Max-Forward Returns für den gewählten Horizont"></div>
           </section>
 
+          <h2 class="chart-section-title">Backtest</h2>
           <section class="analysis-panel" aria-labelledby="in-sample-title">
             <div class="analysis-header">
               <div class="forward-heading-row">
@@ -743,7 +758,7 @@
                   Jahre
                 </label>
               </div>
-              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; Modellwahl ohne lineare Regression.</p>
+              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; lineare Regression.</p>
             </div>
             <div id="in-sample-chart" class="analysis-chart" role="img" aria-label="In-Sample-Streudiagramm aus Momentum-Indikator und Forward Returns"></div>
           </section>
@@ -855,7 +870,7 @@
       { months: 24, label: "24M" }
     ];
     const AUTO_FIT_HORIZONS = new Set([12, 24]);
-    const NONLINEAR_MODEL_TYPES = ["logarithmic", "exponential", "power", "quadratic", "cubic", "quartic"];
+    const LINEAR_MODEL_TYPES = ["linear"];
     const FORWARD_RETURN_SERIES = [
       { key: "min", label: "Min", color: "#dc2626", valueKey: "minReturn", dateKey: "minDate", priceKey: "minPrice" },
       { key: "max", label: "Max", color: "#16a34a", valueKey: "maxReturn", dateKey: "maxDate", priceKey: "maxPrice" }
@@ -872,7 +887,7 @@
     function readForwardHorizonMonths() {
       const input = document.getElementById("forward-horizon");
       const parsed = Number(input?.value);
-      const selected = FORWARD_HORIZONS.some((horizon) => horizon.months === parsed) ? parsed : 12;
+      const selected = FORWARD_HORIZONS.some((horizon) => horizon.months === parsed) ? parsed : 24;
       if (input && input.value !== String(selected)) input.value = String(selected);
       return selected;
     }
@@ -1182,7 +1197,7 @@
         return entry.signalPointsByLookback[cacheKey];
       }
       const weekly = getWeeklyPoints(entry);
-      const lookbackSeconds = lookbackMonths * (365.25 / 12) * 24 * 60 * 60;
+      const lookbackSeconds = lookbackMonths * 24 * 60 * 60;
       const points = [];
       let pastIndex = 0;
       let runningMinimum = Infinity;
@@ -1200,8 +1215,8 @@
         const momentum01 = runningMaximum === runningMinimum
           ? 0.5
           : (absoluteMomentum - runningMinimum) / (runningMaximum - runningMinimum);
-        const weightedMomentum = (1 - alpha) + alpha * momentum01;
-        const signal = current.price !== 0 ? weightedMomentum / current.price : null;
+        const weightedMomentum = (momentum01 * alpha) + (1 - alpha);
+        const signal = current.price * weightedMomentum;
         if (!Number.isFinite(signal)) return;
         points.push({
           ticker,
@@ -1382,7 +1397,7 @@
       return { type, name, complexity, predict, equation };
     }
 
-    function selectBestRegressionModel(points, xKey, modelTypes = ["linear", "logarithmic", "exponential", "power", "quadratic"]) {
+    function selectBestRegressionModel(points, xKey, modelTypes = LINEAR_MODEL_TYPES) {
       const timed = points
         .map((point) => ({ ...point, _modelTime: Number.isFinite(point.time) ? point.time : parseTimestamp(point.date || point.dateLabel) }))
         .filter((point) => Number.isFinite(point._modelTime) && Number.isFinite(point[xKey]) && Number.isFinite(point.returnValue))
@@ -1459,7 +1474,7 @@
         selectBestRegressionModel(
           training.filter((point) => point.returnType === returnType),
           xKey,
-          NONLINEAR_MODEL_TYPES
+          LINEAR_MODEL_TYPES
         )
       ]));
       const predictions = outOfSamplePoints.map((point) => {
@@ -1545,7 +1560,7 @@
     function describeAutomaticFits(fits, visibleHorizons) {
       const horizon = visibleHorizons[0];
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
-        return "Automatische Anpassung ist für 12M und 24M verfügbar.";
+        return "Lineare Regression ist für 12M und 24M verfügbar.";
       }
       const descriptions = FORWARD_RETURN_SERIES
         .map((series) => {
@@ -1554,7 +1569,7 @@
           const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
           return `${horizon.label} ${series.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
         });
-      return descriptions.length ? `Automatische Anpassung · ${descriptions.join(" | ")}` : "Automatische Anpassung ist für 12M und 24M verfügbar.";
+      return descriptions.length ? `Lineare Regression · ${descriptions.join(" | ")}` : "Lineare Regression ist für 12M und 24M verfügbar.";
     }
 
     function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
@@ -1779,8 +1794,9 @@
 
     function readMonthInput(id) {
       const input = document.getElementById(id);
-      const value = Math.max(0.2, Math.min(24, Math.round((Number(input?.value) || 12) * 5) / 5));
-      if (input) input.value = value.toFixed(1);
+      const parsed = Number(String(input?.value ?? "60").replace(",", "."));
+      const value = Math.max(5, Math.min(730, Math.round(Number.isFinite(parsed) ? parsed : 60)));
+      if (input) input.value = String(value);
       return value;
     }
 
@@ -1826,11 +1842,11 @@
           .filter((point) => point.time >= timeRange[0] && point.time <= timeRange[1])
       })).filter((entry) => entry.points.length);
       document.getElementById("signal-title").textContent = useLogPrice
-        ? `${lookbackMonths}M-Log-Indikator · α ${formatMomentumWeight(momentumWeight)}`
-        : `${lookbackMonths}M-Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+        ? `${lookbackMonths}T-Log-Indikator · α ${formatMomentumWeight(momentumWeight)}`
+        : `${lookbackMonths}T-Indikator · α ${formatMomentumWeight(momentumWeight)}`;
       container.setAttribute("aria-label", useLogPrice
-        ? `Zeitreihe des ${lookbackMonths}-Monats-Log-Momentum-Indikators mit Momentum-Gewicht ${formatMomentumWeight(momentumWeight)} und des natürlichen Logarithmus des Preises`
-        : `Zeitreihe des ${lookbackMonths}-Monats-Momentum-Indikators mit Momentum-Gewicht ${formatMomentumWeight(momentumWeight)} und des aktuellen Preises`);
+        ? `Zeitreihe des ${lookbackMonths}-Tage-Log-Momentum-Indikators mit Momentum-Gewicht ${formatMomentumWeight(momentumWeight)} und des natürlichen Logarithmus des Preises`
+        : `Zeitreihe des ${lookbackMonths}-Tage-Momentum-Indikators mit Momentum-Gewicht ${formatMomentumWeight(momentumWeight)} und des aktuellen Preises`);
       if (!entries.length) {
         summary.textContent = selectedTickers.size ? "Für diesen Zeitraum sind zu wenig Daten vorhanden." : "Keine Reihe ausgewählt.";
         showAnalysisEmpty(container, "Wähle links mindestens einen Rohstoff aus.");
@@ -1950,7 +1966,7 @@
       const useLogPrice = getViewMode() === "log-return";
       const visibleForwardHorizons = config.visibleForwardHorizons || getVisibleForwardHorizons();
       const selectedHorizon = visibleForwardHorizons[0] || getVisibleForwardHorizons()[0];
-      title.textContent = config.titleText || `${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator (α ${formatMomentumWeight(momentumWeight)}) vs. Min/Max-Forward Return (${selectedHorizon.label})`;
+      title.textContent = config.titleText || `${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator (α ${formatMomentumWeight(momentumWeight)}) vs. Min/Max-Forward Return (${selectedHorizon.label})`;
       const basePoints = config.pointsOverride || visibleForwardHorizons.flatMap((horizon) =>
         [...selectedTickers].flatMap((ticker) =>
           calculateSignalForwardPoints(dataset[ticker], ticker, lookbackMonths, horizon.months, useLogPrice, momentumWeight)
@@ -1969,7 +1985,7 @@
       summary.textContent = displayedSummary;
       container.setAttribute(
         "aria-label",
-        `Streudiagramm aus ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Gewicht ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
+        `Streudiagramm aus ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum-Indikator mit Gewicht ${formatMomentumWeight(momentumWeight)} und Min-/Max-Forward Returns für ${selectedHorizon.label}. ${displayedSummary}`
       );
       const maxRenderedPoints = 2500;
       const sampled = sampleForwardReturnPoints(points, Math.ceil(maxRenderedPoints / FORWARD_RETURN_SERIES.length));
@@ -2009,7 +2025,7 @@
         .call((group) => group.selectAll("text").attr("fill", "#64748b").attr("font-size", 10));
       root.append("text").attr("x", innerWidth / 2).attr("y", innerHeight + 44).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10)
-        .text(`((1−α)+α·${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Momentum) ÷ Preis · α=${formatMomentumWeight(momentumWeight)}`);
+        .text(`Preis · ((1−α)+α·${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Momentum 0..1) · α=${formatMomentumWeight(momentumWeight)}`);
       root.append("text").attr("transform", "rotate(-90)").attr("x", -innerHeight / 2).attr("y", -50).attr("text-anchor", "middle")
         .attr("fill", "#334155").attr("font-size", 10).text("Min/Max-Forward Return");
 
@@ -2093,7 +2109,7 @@
       const trainingYears = readTrainingYears();
       const useLogPrice = getViewMode() === "log-return";
       const selectedHorizon = getVisibleForwardHorizons()[0];
-      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+      title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
       const horizons = AUTO_FIT_HORIZONS.has(selectedHorizon.months) ? [selectedHorizon] : [];
       if (!selectedTickers.size) {
         summary.textContent = "Keine Reihe ausgewählt.";
@@ -2134,12 +2150,12 @@
         titleId: "in-sample-title",
         lookbackMonths,
         momentumWeight,
-        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`,
+        titleText: `In-Sample · Zeitraum: ${trainingStartLabel} bis ${cutoffLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`,
         visibleForwardHorizons,
         pointsOverride: split.training,
         pointsAlreadyExpanded: true,
         automaticFitsOverride: split.models,
-        summaryPrefix: `${trainingStartLabel} bis ${cutoffLabel} · ${trainingYears} Jahre · ohne lineares Modell`,
+        summaryPrefix: `${trainingStartLabel} bis ${cutoffLabel} · ${trainingYears} Jahre`,
         showCurrentReferences: false
       });
 
@@ -2154,7 +2170,7 @@
       const outOfSampleEnd = d3.max(split.predictions, (point) => point.time);
       const outOfSampleStartLabel = formatDate(outOfSampleStart);
       const outOfSampleEndLabel = formatDate(outOfSampleEnd);
-      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${lookbackMonths}M-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
+      title.textContent = `Out-of-Sample · Zeitraum: ${outOfSampleStartLabel} bis ${outOfSampleEndLabel} · ${selectedHorizon.label} · ${lookbackMonths}T-${useLogPrice ? "Log-" : ""}Indikator · α ${formatMomentumWeight(momentumWeight)}`;
 
       const metric = (value) => Number.isFinite(value) ? value.toFixed(2).replace(".", ",") : "–";
       summary.textContent = results.map(({ series, metrics, actualMean, predictedMean, model }) =>
@@ -2885,7 +2901,6 @@
 
         renderD3Chart(seriesEntries.filter((entry) => entry.visible && entry.chartData?.length));
 
-        renderLegend(getSelectedSeries(), timeRange, cutoffTime, rangeMs);
         renderForwardReturnChart(selectedTickers);
         renderSignalChart(selectedTickers, timeRange);
         renderSignalForwardChart(selectedTickers);
@@ -2897,6 +2912,7 @@
 
     function renderLegend(selected, timeRange, cutoffTime, rangeMs) {
       const legendContainer = document.getElementById("legend");
+      if (!legendContainer) return;
       if (selected.length === 0) {
         legendContainer.innerHTML = "";
         return;
