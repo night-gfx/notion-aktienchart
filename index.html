@@ -1136,6 +1136,7 @@
         }
         const minReturn = ((minimum.price / current.price) - 1) * 100;
         const maxReturn = ((maximum.price / current.price) - 1) * 100;
+        const futureReturn = ((future.price / current.price) - 1) * 100;
         const analysisPrice = useLogPrice ? Math.log(current.price) : current.price;
         points.push({
           ticker,
@@ -1145,6 +1146,7 @@
           analysisPrice,
           futureDate: future.dateLabel,
           futurePrice: future.price,
+          futureReturn,
           minDate: minimum.dateLabel,
           minPrice: minimum.price,
           minReturn,
@@ -1244,6 +1246,7 @@
           weightedMomentum: signalPoint.weightedMomentum,
           futureDate: forwardPoint.futureDate,
           futurePrice: forwardPoint.futurePrice,
+          futureReturn: forwardPoint.futureReturn,
           minDate: forwardPoint.minDate,
           minPrice: forwardPoint.minPrice,
           minReturn: forwardPoint.minReturn,
@@ -1467,6 +1470,9 @@
           ticker: point.ticker,
           dateLabel: point.dateLabel,
           futureDate: point.futureDate,
+          futurePrice: point.futurePrice,
+          futureReturn: point.futureReturn,
+          price: point.price,
           time: point._modelTime,
           horizonMonths: point.horizonMonths,
           returnType: point.returnType,
@@ -1509,7 +1515,8 @@
           if (!pair.min || !pair.max) return null;
           const predictedMidpoint = (pair.min.predicted + pair.max.predicted) / 2;
           if (!Number.isFinite(predictedMidpoint)) return null;
-          const actualReturn = ((pair.min.futurePrice / pair.min.price) - 1) * 100;
+          const actualReturn = pair.min.futureReturn;
+          if (!Number.isFinite(actualReturn)) return null;
           return {
             ...pair,
             predictedMidpoint,
@@ -2204,7 +2211,7 @@
         { label: "Prognose-Band", color: "#94a3b8" },
         { label: "Prognose Max", color: "#16a34a" },
         { label: "Prognose Min", color: "#dc2626" },
-        { label: "Tatsächlich", color: "#111827" }
+        { label: "Ist-Forward", color: "#111827" }
       ].forEach((series, index) => {
         const item = legend.append("g").attr("transform", `translate(${Math.max(92, innerWidth - 260) + index * 70},0)`);
         item.append("circle").attr("r", 4).attr("fill", series.color);
@@ -2214,7 +2221,7 @@
       const maxMarks = 1800;
       const sampleStep = Math.max(1, Math.ceil(pairedPredictions.length / maxMarks));
       const sampled = pairedPredictions.filter((_, index) => index % sampleStep === 0);
-      const groupedPredictions = d3.group(sampled, (point) => point.ticker);
+      const groupedPredictions = d3.group(pairedPredictions, (point) => point.ticker);
       const bandArea = d3.area()
         .defined((point) => Number.isFinite(point.minPredicted) && Number.isFinite(point.maxPredicted))
         .x((point) => x(new Date(point.time * 1000)))
@@ -2260,6 +2267,8 @@
           .attr("fill", "none")
           .attr("stroke", "#111827")
           .attr("stroke-width", 2.2)
+          .attr("stroke-linecap", "round")
+          .attr("stroke-linejoin", "round")
           .attr("d", actualLine);
       });
       const marks = root.append("g");
