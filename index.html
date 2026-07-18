@@ -708,6 +708,15 @@
                     <option value="24" selected>24M</option>
                   </select>
                 </label>
+                <label class="control-label" for="regression-model">
+                  Modell:
+                  <select id="regression-model" aria-label="Funktionsgleichung für Regression">
+                    <option value="auto" selected>Automatisch</option>
+                    <option value="linear">Linear</option>
+                    <option value="logarithmic">Logarithmisch</option>
+                    <option value="inverse">Invers</option>
+                  </select>
+                </label>
               </div>
               <p id="forward-summary" class="forward-summary">Ausgewählte Rohstoffe werden analysiert.</p>
               <p id="forward-note" class="forward-note">Wochenwerte · Min rot, Max grün · Modellkurven bei 12M/24M</p>
@@ -860,6 +869,22 @@
       const selected = FORWARD_HORIZONS.some((horizon) => horizon.months === parsed) ? parsed : 24;
       if (input && input.value !== String(selected)) input.value = String(selected);
       return selected;
+    }
+
+    function getSelectedRegressionModelTypes() {
+      const input = document.getElementById("regression-model");
+      const value = input?.value || "auto";
+      if (value === "linear" || value === "logarithmic" || value === "inverse") return [value];
+      if (input && value !== "auto") input.value = "auto";
+      return MODEL_TYPES;
+    }
+
+    function getRegressionModeLabel(modelTypes = getSelectedRegressionModelTypes()) {
+      if (modelTypes.length !== 1) return "Modellwahl linear/log/invers";
+      if (modelTypes[0] === "linear") return "Lineare Regression";
+      if (modelTypes[0] === "logarithmic") return "Logarithmische Regression";
+      if (modelTypes[0] === "inverse") return "Inverse Regression";
+      return "Regression";
     }
 
     function getVisibleForwardHorizons() {
@@ -1378,7 +1403,7 @@
       };
     }
 
-    function calculateFixedTrainTestSplit(points, trainingYears, xKey = "signal") {
+    function calculateFixedTrainTestSplit(points, trainingYears, xKey = "signal", modelTypes = MODEL_TYPES) {
       const timed = points
         .map((point) => ({
           ...point,
@@ -1396,7 +1421,7 @@
       const outOfSamplePoints = timed.filter((point) => point._modelTime > cutoffTime);
       if (training.length < 40 || outOfSamplePoints.length < 10) return null;
 
-      const meanModel = selectBestRegressionModel(training, xKey, MODEL_TYPES);
+      const meanModel = selectBestRegressionModel(training, xKey, modelTypes);
       const models = new Map([["mean", meanModel]]);
       const predictions = outOfSamplePoints.map((point) => {
         if (!meanModel) return null;
@@ -1473,15 +1498,16 @@
       return new Map([["mean", selectBestRegressionModel(points, xKey, modelTypes)]]);
     }
 
-    function describeAutomaticFits(fits, visibleHorizons) {
+    function describeAutomaticFits(fits, visibleHorizons, modelTypes = MODEL_TYPES) {
       const horizon = visibleHorizons[0];
+      const modeLabel = getRegressionModeLabel(modelTypes);
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
-        return "Modellwahl aus linear, logarithmisch und invers ist für 12M und 24M verfügbar.";
+        return `${modeLabel} ist für 12M und 24M verfügbar.`;
       }
       const model = fits.get("mean");
       if (!model) return "Mean-Regression: zu wenig Daten.";
       const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
-      return `Mean-Regression · ${horizon.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
+      return `${modeLabel} · ${horizon.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
     }
 
     function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
@@ -1544,6 +1570,7 @@
       tooltip.style.display = "none";
       const useLogPrice = getViewMode() === "log-return";
       const selectedHorizon = getVisibleForwardHorizons()[0];
+      const modelTypes = getSelectedRegressionModelTypes();
       title.textContent = useLogPrice
         ? `ln(Preis) vs. Min/Max-Forward Return (${selectedHorizon.label})`
         : `Preis vs. Min/Max-Forward Return (${selectedHorizon.label})`;
@@ -1567,8 +1594,8 @@
         return point ? { ...point, ticker, analysisPrice: useLogPrice ? Math.log(point.price) : point.price } : null;
       }).filter(Boolean);
 
-      const automaticFits = getAutomaticFits(points, "analysisPrice", visibleForwardHorizons);
-      const fitDescription = describeAutomaticFits(automaticFits, visibleForwardHorizons);
+      const automaticFits = getAutomaticFits(points, "analysisPrice", visibleForwardHorizons, modelTypes);
+      const fitDescription = describeAutomaticFits(automaticFits, visibleForwardHorizons, modelTypes);
       summary.textContent = fitDescription;
       container.setAttribute(
         "aria-label",
@@ -1725,6 +1752,7 @@
       const useLogPrice = getViewMode() === "log-return";
       const visibleForwardHorizons = config.visibleForwardHorizons || getVisibleForwardHorizons();
       const selectedHorizon = visibleForwardHorizons[0] || getVisibleForwardHorizons()[0];
+      const modelTypes = config.modelTypes || getSelectedRegressionModelTypes();
       const xValueLabel = config.xValueLabel || (useLogPrice ? "ln(Preis)" : "Preis");
       title.textContent = config.titleText || `${xValueLabel} vs. Min/Max-Forward Return (${selectedHorizon.label})`;
       const basePoints = config.pointsOverride || [];
@@ -1735,8 +1763,8 @@
         return;
       }
 
-      const automaticFits = config.automaticFitsOverride || getAutomaticFits(points, "signal", visibleForwardHorizons, config.modelTypes);
-      const fitDescription = describeAutomaticFits(automaticFits, visibleForwardHorizons);
+      const automaticFits = config.automaticFitsOverride || getAutomaticFits(points, "signal", visibleForwardHorizons, modelTypes);
+      const fitDescription = describeAutomaticFits(automaticFits, visibleForwardHorizons, modelTypes);
       const displayedSummary = config.summaryPrefix ? `${config.summaryPrefix} · ${fitDescription}` : fitDescription;
       summary.textContent = displayedSummary;
       container.setAttribute(
@@ -1835,6 +1863,7 @@
       const trainingYears = readTrainingYears();
       const useLogPrice = getViewMode() === "log-return";
       const selectedHorizon = getVisibleForwardHorizons()[0];
+      const modelTypes = getSelectedRegressionModelTypes();
       title.textContent = `Out-of-Sample · Zeitraum: nach Auswahl · ${selectedHorizon.label} · ${useLogPrice ? "ln(Preis)" : "Preis"}`;
       const horizons = AUTO_FIT_HORIZONS.has(selectedHorizon.months) ? [selectedHorizon] : [];
       if (!selectedTickers.size) {
@@ -1859,7 +1888,7 @@
         )
       );
       const allPoints = expandForwardReturnTypes(basePoints);
-      const split = calculateFixedTrainTestSplit(allPoints, trainingYears, "analysisPrice");
+      const split = calculateFixedTrainTestSplit(allPoints, trainingYears, "analysisPrice", modelTypes);
       if (!split) {
         summary.textContent = "Für dieses Trainingsfenster gibt es zu wenig Out-of-Sample-Daten.";
         showAnalysisEmpty(container, "Trainingsjahre verkürzen oder eine längere Historie wählen.");
@@ -1881,6 +1910,7 @@
         pointsOverride: split.training.map((point) => ({ ...point, signal: point.analysisPrice })),
         pointsAlreadyExpanded: true,
         automaticFitsOverride: split.models,
+        modelTypes,
         summaryPrefix: `${trainingStartLabel} bis ${cutoffLabel} · ${trainingYears} Jahre`,
         showCurrentReferences: false,
         xAxisText: useLogPrice ? "ln(historischer Preis)" : "Historischer Preis",
@@ -2830,6 +2860,7 @@
       document.getElementById("training-years").addEventListener("change", renderChart);
       document.getElementById("training-years").addEventListener("input", renderChart);
       document.getElementById("forward-horizon").addEventListener("change", renderChart);
+      document.getElementById("regression-model").addEventListener("change", renderChart);
 
       document.querySelectorAll('input[name="view-mode"]').forEach((radio) => {
         radio.addEventListener("change", handleModeChange);
