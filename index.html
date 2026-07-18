@@ -728,7 +728,7 @@
                   Jahre
                 </label>
               </div>
-              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; lineare Regression.</p>
+              <p id="in-sample-summary" class="forward-summary">Die ersten 10 Jahre; Modellwahl aus linear, logarithmisch und invers.</p>
             </div>
             <div id="in-sample-chart" class="analysis-chart" role="img" aria-label="In-Sample-Streudiagramm aus historischem Preis und Forward Returns"></div>
           </section>
@@ -840,7 +840,7 @@
       { months: 24, label: "24M" }
     ];
     const AUTO_FIT_HORIZONS = new Set([12, 24]);
-    const MODEL_TYPES = ["linear"];
+    const MODEL_TYPES = ["linear", "logarithmic", "inverse"];
     const FORWARD_RETURN_SERIES = [
       { key: "min", label: "Min", color: "#dc2626", valueKey: "minReturn", dateKey: "minDate", priceKey: "minPrice" },
       { key: "max", label: "Max", color: "#16a34a", valueKey: "maxReturn", dateKey: "maxDate", priceKey: "maxPrice" }
@@ -1250,6 +1250,13 @@
         values = filtered.map((point) => point.returnValue);
         name = "logarithmisch";
         complexity = 2;
+      } else if (type === "inverse") {
+        filtered = clean.filter((point) => point[xKey] !== 0);
+        if (filtered.length < clean.length * 0.9) return null;
+        rows = filtered.map((point) => [1, 1 / point[xKey]]);
+        values = filtered.map((point) => point.returnValue);
+        name = "invers";
+        complexity = 2;
       } else if (type === "quadratic") {
         rows = filtered.map((point) => [1, point[xKey], point[xKey] ** 2]);
         values = filtered.map((point) => point.returnValue);
@@ -1307,6 +1314,9 @@
       } else if (type === "logarithmic") {
         predict = (x) => x > 0 ? coefficients[0] + coefficients[1] * Math.log(x) : NaN;
         equation = `y = ${formatModelNumber(coefficients[0])} ${signedModelTerm(coefficients[1], "·ln(x)")}`;
+      } else if (type === "inverse") {
+        predict = (x) => x !== 0 ? coefficients[0] + coefficients[1] / x : NaN;
+        equation = `y = ${formatModelNumber(coefficients[0])} ${signedModelTerm(coefficients[1], "/x")}`;
       } else {
         predict = (x) => coefficients[0] + coefficients[1] * x + coefficients[2] * x * x;
         equation = `y = ${formatModelNumber(coefficients[0])} ${signedModelTerm(coefficients[1], "·x")} ${signedModelTerm(coefficients[2], "·x²")}`;
@@ -1479,7 +1489,7 @@
     function describeAutomaticFits(fits, visibleHorizons) {
       const horizon = visibleHorizons[0];
       if (!horizon || !AUTO_FIT_HORIZONS.has(horizon.months)) {
-        return "Lineare Regression ist für 12M und 24M verfügbar.";
+        return "Modellwahl aus linear, logarithmisch und invers ist für 12M und 24M verfügbar.";
       }
       const descriptions = FORWARD_RETURN_SERIES
         .map((series) => {
@@ -1488,7 +1498,7 @@
           const score = Number.isFinite(model.testR2) ? model.testR2.toFixed(2).replace(".", ",") : "–";
           return `${horizon.label} ${series.label}: ${model.name} · ${model.equation} · Test-R² ${score}`;
         });
-      return descriptions.length ? `Lineare Regression · ${descriptions.join(" | ")}` : "Lineare Regression ist für 12M und 24M verfügbar.";
+      return descriptions.length ? `Modellwahl linear/log/invers · ${descriptions.join(" | ")}` : "Modellwahl aus linear, logarithmisch und invers ist für 12M und 24M verfügbar.";
     }
 
     function renderAutomaticFitCurve(root, model, series, xScale, yScale, xExtent) {
